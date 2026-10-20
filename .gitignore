@@ -42,3 +42,8 @@ report.html
 .agents/
 tasks/
 SPEC.md
+
+# Screenshot & local media
+*.png
+*.jpg
+*.jpeg
