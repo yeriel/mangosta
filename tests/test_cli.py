@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from mangosta.bundle import save_bundle
+from mangosta.artifacts import save_bundle
 from mangosta.cli import inspect_bundle, run_report
 from tests.conftest import DummyMLP
 

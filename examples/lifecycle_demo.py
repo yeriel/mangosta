@@ -22,6 +22,7 @@ import torch.optim as optim
 
 from mangosta import (
     ModelRegistry,
+    export_onnx,
     generate_report,
     load_bundle,
     quick_track,
@@ -202,6 +203,20 @@ def main() -> None:
     predictions = bundle.predict(test_batch)
     print(f" -> Predictions successfully generated for batch shape {list(test_batch.shape)}:")
     print(f"    Output shape: {list(predictions.shape)}, dtype: {predictions.dtype}")
+
+    # -------------------------------------------------------------------------
+    # 8. Standalone Production Export to ONNX
+    # -------------------------------------------------------------------------
+    print("\n[Phase 7] Exporting bundle to standalone ONNX...")
+    onnx_file = work_dir / "model_production.onnx"
+    export_onnx(
+        model_or_bundle=final_bundle_path,
+        output_path=onnx_file,
+        sample_input_shape=(1, 4),
+        float16=False,
+        verify=True,
+    )
+    print(f" -> Standalone ONNX exported to: {onnx_file.name} ({onnx_file.stat().st_size} bytes)")
 
     print("\n" + "=" * 70)
     print("✅ DEMO SUCCEEDED! All lifecycle phases completed with 100% fidelity.")

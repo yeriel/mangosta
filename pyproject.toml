@@ -36,7 +36,7 @@ onnx = [
 ]
 
 [project.scripts]
-mangosta = "mangosta.cli:main"
+mangosta = "mangosta.cli.main:main"
 
 [dependency-groups]
 dev = [

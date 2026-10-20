@@ -12,9 +12,9 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-from mangosta.bundle import read_bundle_manifest
-from mangosta.exporter import export_onnx
-from mangosta.report import generate_report
+from mangosta.artifacts.bundle import read_bundle_manifest
+from mangosta.export.onnx import export_onnx
+from mangosta.tracking.report import generate_report
 
 
 def inspect_bundle(bundle_path: str) -> None:

@@ -109,15 +109,26 @@ mangosta/
 ├── README.md                   # Documentación, quickstart en 3 líneas y API reference
 ├── src/
 │   └── mangosta/
-│       ├── __init__.py         # API pública de primer nivel
-│       ├── exceptions.py       # Excepciones estructuradas de la librería
-│       ├── registry.py         # ModelRegistry y decorador @register_model
-│       ├── schema.py           # ModelSchema, TensorSpec e inferencia I/O
-│       ├── tracker.py          # RunTracker, quick_track y hash de datasets
-│       ├── bundle.py           # Creación y empaquetado de archivos .bundle
-│       ├── loader.py           # LoadedBundle, load_bundle y resume_training
-│       ├── report.py           # Generador de reportes HTML estáticos y visualización
-│       └── cli.py              # CLI: inspect, report, view (servidor efímero)
+│       ├── __init__.py         # API pública de primer nivel (KISS)
+│       ├── exceptions.py       # Excepciones estructuradas del dominio
+│       ├── core/               # Contratos y catálogo (SRP: Modelos y Firmas)
+│       │   ├── __init__.py
+│       │   ├── registry.py     # ModelRegistry y decorador @register_model
+│       │   └── schema.py       # ModelSchema, TensorSpec e inferencia I/O
+│       ├── artifacts/          # Empaquetado y carga (SRP: Bundle ZIP y Checkpoints)
+│       │   ├── __init__.py
+│       │   ├── bundle.py       # Creación y empaquetado atómico de archivos .bundle
+│       │   └── loader.py       # LoadedBundle, load_bundle y resume_training
+│       ├── tracking/           # Seguimiento y visualización (SRP: Linaje y Métricas)
+│       │   ├── __init__.py
+│       │   ├── tracker.py      # RunTracker, quick_track y hash SHA-256 de datasets
+│       │   └── report.py       # Generador de reportes HTML estáticos offline
+│       ├── export/             # Exportación a producción (SRP: Formatos externos)
+│       │   ├── __init__.py
+│       │   └── onnx.py         # Exportador desacoplado ONNX y mapeo dict-to-tuple
+│       └── cli/                # Capa de presentación / Terminal
+│           ├── __init__.py
+│           └── main.py         # CLI: inspect, report, view, export-onnx
 ├── tests/
 │   ├── conftest.py             # Fixtures compartidas de PyTorch (modelos simples, datos)
 │   ├── test_registry.py        # Tests de inmutabilidad, colisiones y resolución SemVer
@@ -126,9 +137,10 @@ mangosta/
 │   ├── test_bundle.py          # Tests de creación de bundle, integridad ZIP y train_state
 │   ├── test_loader.py          # Tests de carga universal, predicción y resume_training
 │   ├── test_report.py          # Tests de generación de reporte HTML y curvas
+│   ├── test_exporter.py        # Tests de exportación a ONNX y mapeo de salidas
 │   └── test_cli.py             # Tests de comandos de terminal
 └── examples/
-    └── lifecycle_demo.py       # Ejemplo end-to-end: train -> checkpoint -> resume -> load -> infer -> report
+    └── lifecycle_demo.py       # Ejemplo end-to-end: train -> checkpoint -> resume -> load -> infer -> onnx -> report
 ```
 
 ---

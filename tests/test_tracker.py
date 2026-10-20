@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from mangosta.tracker import RunTracker, compute_sha256, quick_track
+from mangosta.tracking.tracker import RunTracker, compute_sha256, quick_track
 
 
 def test_compute_sha256_file_and_directory(tmp_path: Path) -> None:

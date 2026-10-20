@@ -16,8 +16,8 @@ import torch
 import torch.nn as nn
 import yaml
 
+from mangosta.core.schema import ModelSchema, infer_schema
 from mangosta.exceptions import BundleCorruptedError
-from mangosta.schema import ModelSchema, infer_schema
 
 
 def _capture_rng_states() -> dict[str, Any]:

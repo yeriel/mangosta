@@ -9,8 +9,9 @@ import pytest
 import torch
 from torch import nn
 
-from mangosta.bundle import save_bundle
-from mangosta.exporter import export_onnx
+from mangosta.artifacts import save_bundle
+from mangosta.core import ModelRegistry
+from mangosta.export import export_onnx
 from tests.conftest import DummyMLP
 
 
@@ -63,8 +64,6 @@ def test_export_onnx_with_dict_output_mapping(tmp_path: Path) -> None:
 
 
 def test_export_onnx_from_bundle(tmp_path: Path) -> None:
-    from mangosta.registry import ModelRegistry
-
     ModelRegistry.register_model("dummy_mlp", "1.0.0", DummyMLP)
 
     # Save a bundle first

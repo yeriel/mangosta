@@ -13,10 +13,10 @@ import torch
 import torch.nn as nn
 import yaml
 
-from mangosta.bundle import _restore_rng_states
+from mangosta.artifacts.bundle import _restore_rng_states
+from mangosta.core.registry import ModelRegistry
+from mangosta.core.schema import ModelSchema
 from mangosta.exceptions import BundleCorruptedError, ResumeStateError
-from mangosta.registry import ModelRegistry
-from mangosta.schema import ModelSchema
 
 
 @dataclass

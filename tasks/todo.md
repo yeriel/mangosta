@@ -44,3 +44,8 @@
   - Acceptance: `export_onnx` soporta modelos directos o bundles, mapeo de salidas dict a tupla (`output_mapping`), FP16/FP32, `input_names`, `output_names`, `dynamic_axes`, verificación opcional con `onnx.checker` y comando CLI `mangosta export-onnx`.
   - Verify: `uv run pytest tests/test_exporter.py -v`
   - Files: `src/mangosta/exporter.py`, `src/mangosta/cli.py`, `src/mangosta/__init__.py`, `pyproject.toml`, `tests/test_exporter.py`
+
+- [x] Task 10: Limpieza integral del repositorio y modularización bajo KISS y SOLID
+  - Acceptance: Repositorio limpio de artefactos temporales/caché. Código en `src/mangosta/` estructurado en subpaquetes cohesivos por responsabilidad (`core`, `artifacts`, `tracking`, `export`, `cli`), manteniendo la API pública simple en `__init__.py`. 100% de tests y linter pasando.
+  - Verify: `uv run pytest && uv run ruff check src tests && uv build`
+  - Files: `src/mangosta/core/`, `src/mangosta/artifacts/`, `src/mangosta/tracking/`, `src/mangosta/export/`, `src/mangosta/cli/`, `pyproject.toml`, `SPEC.md`, `README.md`

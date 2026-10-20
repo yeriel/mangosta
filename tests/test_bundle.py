@@ -9,7 +9,7 @@ import pytest
 import torch
 import torch.optim as optim
 
-from mangosta.bundle import read_bundle_manifest, save_bundle
+from mangosta.artifacts.bundle import read_bundle_manifest, save_bundle
 from mangosta.exceptions import BundleCorruptedError
 from tests.conftest import DummyMLP
 

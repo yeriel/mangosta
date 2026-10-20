@@ -12,7 +12,7 @@ from typing import Any
 import torch
 from torch import nn
 
-from mangosta.loader import load_bundle
+from mangosta.artifacts.loader import load_bundle
 
 
 class _DictOutputWrapper(nn.Module):

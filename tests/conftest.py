@@ -9,7 +9,7 @@ import pytest
 import torch
 import torch.nn as nn
 
-from mangosta.registry import ModelRegistry
+from mangosta.core import ModelRegistry
 
 
 class DummyMLP(nn.Module):

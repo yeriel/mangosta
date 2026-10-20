@@ -10,10 +10,9 @@ import pytest
 import torch
 import torch.optim as optim
 
-from mangosta.bundle import save_bundle
+from mangosta.artifacts import load_bundle, resume_training, save_bundle
+from mangosta.core import ModelRegistry
 from mangosta.exceptions import ResumeStateError, SchemaValidationError
-from mangosta.loader import load_bundle, resume_training
-from mangosta.registry import ModelRegistry
 from tests.conftest import DummyMLP
 
 

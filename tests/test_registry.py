@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
+from mangosta.core.registry import ModelRegistry, register_component, register_model
 from mangosta.exceptions import (
     ComponentNotFoundError,
     ModelNotFoundError,
     RegistryCollisionError,
 )
-from mangosta.registry import ModelRegistry, register_component, register_model
 from tests.conftest import DummyMLP
 
 

@@ -6,9 +6,8 @@ from pathlib import Path
 
 import torch
 
-from mangosta.bundle import save_bundle
-from mangosta.report import generate_report
-from mangosta.tracker import RunTracker
+from mangosta.artifacts import save_bundle
+from mangosta.tracking import RunTracker, generate_report
 from tests.conftest import DummyMLP
 
 

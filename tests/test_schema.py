@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 import torch
 
+from mangosta.core.schema import ModelSchema, TensorSpec, infer_schema
 from mangosta.exceptions import SchemaValidationError
-from mangosta.schema import ModelSchema, TensorSpec, infer_schema
 from tests.conftest import DummyDictInput, DummyMLP, DummyMultiInput
 
 
