@@ -234,6 +234,25 @@ src/mangosta/
 
 ---
 
+## AI Agent Integration (Gemini / Antigravity Skill)
+
+`mangosta` provides a production-grade Agent Skill designed for LLMs (Google Gemini, Antigravity CLI, Claude, OpenAI). The skill equips AI coding agents with the exact runbooks, API contracts, and defensive patterns needed to manage models autonomously without hallucinating commands or corrupting checkpoint states.
+
+### Installing the Skill in Your Project
+
+To make your local AI agent an expert in `mangosta`, copy the public skill specification to your workspace customization folder:
+
+```bash
+mkdir -p .agents/skills/mangosta
+cp skills/mangosta/SKILL.md .agents/skills/mangosta/SKILL.md
+```
+
+Once installed, AI coding agents automatically discover the skill via its standard YAML frontmatter:
+- **Scope**: Automated model registration, contract validation, checkpoint recovery, and ONNX exports.
+- **Location in repository**: [`skills/mangosta/SKILL.md`](file:///home/yeriel/Workspace/mangosta/skills/mangosta/SKILL.md)
+
+---
+
 ## Development
 
 Run tests and verification suites locally:

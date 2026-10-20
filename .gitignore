@@ -37,3 +37,8 @@ experiments/
 *.bundle
 *.bundle.tmp*
 report.html
+
+# Local agent development & planning files
+.agents/
+tasks/
+SPEC.md
