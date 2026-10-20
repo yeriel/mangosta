@@ -1,13 +1,13 @@
-"""Comprehensive End-to-End Lifecycle Demo for mangosta.
+"""End-to-end model lifecycle demonstration for mangosta.
 
 Demonstrates:
-1. Immutable architecture registration (@register_model).
-2. Atomic local tracking and dataset fingerprinting (quick_track).
-3. Training with mid-way fault-tolerant checkpointing (weights + train_state + RNG).
-4. Simulated crash and deterministic resumption (resume_training).
-5. Final inference bundle export (weights + contract schema).
-6. Universal decoupled loading and validated prediction (load_bundle).
-7. Serverless HTML report generation.
+1. Immutable architecture registration.
+2. Atomic experiment tracking with dataset fingerprinting.
+3. Mid-training fault-tolerant checkpointing.
+4. Deterministic resumption after simulated interruption.
+5. Exporting an inference bundle.
+6. Decoupled loading with tensor contract validation.
+7. Standalone production export to ONNX.
 """
 
 from __future__ import annotations
@@ -31,12 +31,10 @@ from mangosta import (
     save_bundle,
 )
 
-# -----------------------------------------------------------------------------
-# 1. Register Model Architecture in ModelRegistry
-# -----------------------------------------------------------------------------
+
 @register_model(family="mlp_regressor", version="1.0.0")
 class MLPRegressor(nn.Module):
-    """Simple 2-layer MLP for tabular regression."""
+    """Two-layer multi-layer perceptron for tabular regression."""
 
     def __init__(self, in_features: int = 4, hidden_dim: int = 16, out_features: int = 1) -> None:
         super().__init__()
@@ -55,17 +53,15 @@ class MLPRegressor(nn.Module):
 
 def main() -> None:
     print("=" * 70)
-    print("🥭 MANGOSTA END-TO-END MODEL LIFECYCLE DEMO")
+    print("MANGOSTA END-TO-END MODEL LIFECYCLE DEMO")
     print("=" * 70)
 
     work_dir = Path("./demo_artifacts").resolve()
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Create a dummy dataset and compute its SHA-256 fingerprint
     dataset_file = work_dir / "synthetic_data.csv"
     dataset_file.write_text("x0,x1,x2,x3,y\n" + "\n".join("1.0,2.0,3.0,4.0,10.0" for _ in range(100)))
 
-    # Set initial seed
     torch.manual_seed(1337)
     np.random.seed(1337)
     random.seed(1337)
@@ -74,22 +70,17 @@ def main() -> None:
     final_bundle_path = work_dir / "model_final.bundle"
     report_html_path = work_dir / "lifecycle_report.html"
 
-    # -------------------------------------------------------------------------
-    # 2. Phase 1: Start Experiment Tracking & Train initial epochs
-    # -------------------------------------------------------------------------
-    print("\n[Phase 1] Starting experiment with quick_track...")
+    print("\n[Phase 1] Starting experiment tracking with quick_track...")
     with quick_track(run_name="demo_run", experiment="regression_demo", root_dir=work_dir / "experiments") as run:
         data_hash = run.set_dataset(dataset_file)
         run.log_params({"family": "mlp_regressor", "lr": 0.01, "hidden_dim": 16})
-        print(f" -> Dataset SHA-256: {data_hash[:16]}...")
+        print(f"Dataset SHA-256: {data_hash[:16]}...")
 
-        # Build model from registry
         model = ModelRegistry.build("mlp_regressor", version="1.0.0", in_features=4, hidden_dim=16, out_features=1)
         optimizer = optim.Adam(model.parameters(), lr=0.01)
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=0.5)
         criterion = nn.MSELoss()
 
-        # Train Epochs 1 & 2
         for epoch in range(1, 3):
             for step in range(5):
                 global_step = (epoch - 1) * 5 + step
@@ -105,11 +96,8 @@ def main() -> None:
                 run.log_metric("train_loss", loss.item(), step=global_step)
 
             scheduler.step()
-            print(f" -> Epoch {epoch} completed. Loss: {loss.item():.4f}, LR: {optimizer.param_groups[0]['lr']}")
+            print(f"Epoch {epoch} completed. Loss: {loss.item():.4f}, LR: {optimizer.param_groups[0]['lr']}")
 
-        # ---------------------------------------------------------------------
-        # 3. Save Fault-Tolerant Checkpoint
-        # ---------------------------------------------------------------------
         print(f"\n[Phase 2] Saving fault-tolerant checkpoint to {checkpoint_bundle_path.name}...")
         save_bundle(
             output_path=checkpoint_bundle_path,
@@ -127,17 +115,14 @@ def main() -> None:
             dataset_hash=data_hash,
         )
 
-        # ---------------------------------------------------------------------
-        # 4. Simulate Failure & Resume Training
-        # ---------------------------------------------------------------------
-        print("\n[Phase 3] Simulating crash and instantiating fresh model/optimizer...")
+        print("\n[Phase 3] Simulating interruption and re-initializing model state...")
         del model, optimizer, scheduler
 
         fresh_model = ModelRegistry.build("mlp_regressor", version="1.0.0", in_features=4, hidden_dim=16, out_features=1)
         fresh_optimizer = optim.Adam(fresh_model.parameters(), lr=0.01)
         fresh_scheduler = optim.lr_scheduler.StepLR(fresh_optimizer, step_size=2, gamma=0.5)
 
-        print(f" -> Resuming training from {checkpoint_bundle_path.name}...")
+        print(f"Resuming training from {checkpoint_bundle_path.name}...")
         resume_state = resume_training(
             bundle_path=checkpoint_bundle_path,
             model=fresh_model,
@@ -145,9 +130,8 @@ def main() -> None:
             scheduler=fresh_scheduler,
             restore_rng=True,
         )
-        print(f" -> Resumed at Epoch {resume_state.epoch}, Step {resume_state.step}. RNG restored: {resume_state.rng_restored}")
+        print(f"Resumed at Epoch {resume_state.epoch}, Step {resume_state.step}. RNG restored: {resume_state.rng_restored}")
 
-        # Continue training Epochs 3 & 4
         for epoch in range(resume_state.epoch + 1, 5):
             for step in range(5):
                 global_step = (epoch - 1) * 5 + step
@@ -163,11 +147,8 @@ def main() -> None:
                 run.log_metric("train_loss", loss.item(), step=global_step)
 
             fresh_scheduler.step()
-            print(f" -> Epoch {epoch} completed. Loss: {loss.item():.4f}, LR: {fresh_optimizer.param_groups[0]['lr']}")
+            print(f"Epoch {epoch} completed. Loss: {loss.item():.4f}, LR: {fresh_optimizer.param_groups[0]['lr']}")
 
-        # ---------------------------------------------------------------------
-        # 5. Export Final Lightweight Inference Bundle
-        # ---------------------------------------------------------------------
         print(f"\n[Phase 4] Exporting final production bundle to {final_bundle_path.name}...")
         save_bundle(
             output_path=final_bundle_path,
@@ -182,31 +163,21 @@ def main() -> None:
             config={"final_epoch": 4, "total_steps": 20},
         )
 
-        # ---------------------------------------------------------------------
-        # 6. Generate Standalone Interactive HTML Report
-        # ---------------------------------------------------------------------
         print(f"\n[Phase 5] Generating standalone HTML report to {report_html_path.name}...")
         generate_report(run.run_dir, report_html_path)
-        print(f" -> Standalone report saved to: {report_html_path}")
+        print(f"Report saved: {report_html_path}")
 
-    # -------------------------------------------------------------------------
-    # 7. Universal Decoupled Loading for Production Inference
-    # -------------------------------------------------------------------------
-    print("\n[Phase 6] Universal decoupled loading without model class reference...")
+    print("\n[Phase 6] Universal decoupled loading for inference...")
     bundle = load_bundle(final_bundle_path)
-    print(f" -> Loaded bundle: {bundle.family} v{bundle.version}")
-    print(f" -> Model architecture: {type(bundle.model).__name__}")
-    print(f" -> Contract input schema: {bundle.schema.inputs[0].shape} ({bundle.schema.inputs[0].dtype})")
+    print(f"Loaded bundle: {bundle.family} v{bundle.version}")
+    print(f"Model architecture: {type(bundle.model).__name__}")
+    print(f"Contract input schema: {bundle.schema.inputs[0].shape} ({bundle.schema.inputs[0].dtype})")
 
-    # Run inference with automated contract validation
     test_batch = torch.randn(4, 4)
     predictions = bundle.predict(test_batch)
-    print(f" -> Predictions successfully generated for batch shape {list(test_batch.shape)}:")
-    print(f"    Output shape: {list(predictions.shape)}, dtype: {predictions.dtype}")
+    print(f"Predictions generated for batch shape {list(test_batch.shape)}:")
+    print(f"Output shape: {list(predictions.shape)}, dtype: {predictions.dtype}")
 
-    # -------------------------------------------------------------------------
-    # 8. Standalone Production Export to ONNX
-    # -------------------------------------------------------------------------
     print("\n[Phase 7] Exporting bundle to standalone ONNX...")
     onnx_file = work_dir / "model_production.onnx"
     export_onnx(
@@ -216,10 +187,10 @@ def main() -> None:
         float16=False,
         verify=True,
     )
-    print(f" -> Standalone ONNX exported to: {onnx_file.name} ({onnx_file.stat().st_size} bytes)")
+    print(f"Standalone ONNX exported to: {onnx_file.name} ({onnx_file.stat().st_size} bytes)")
 
     print("\n" + "=" * 70)
-    print("✅ DEMO SUCCEEDED! All lifecycle phases completed with 100% fidelity.")
+    print("DEMO COMPLETE: All lifecycle phases verified successfully.")
     print("=" * 70)
 
 

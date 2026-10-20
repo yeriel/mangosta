@@ -1,169 +1,260 @@
-# 🥭 mangosta
+# mangosta
 
 **Lightweight MLOps and Model Lifecycle Management for PyTorch.**
 
-> *"Simple por defecto, estricto bajo demanda"* — Usable en 3 líneas de código para prototipos rápidos, pero extensible mediante contratos formales, fault-tolerance y auditoría de linaje para producción y agentes de IA.
-
-[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg)](https://python.org)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-ee4c2c.svg)](https://pytorch.org)
-[![uv](https://img.shields.io/badge/packaging-uv-purple.svg)](https://github.com/astral-sh/uv)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+> *"Simple by default, strict on demand"* - Functional in three lines of code for rapid experimentation, yet robust enough for production pipelines and autonomous AI agents through formal contracts, deterministic fault tolerance, and immutable architecture versioning.
 
 ---
 
-## 🌟 Características Principales
+## Overview
 
-- 🚫 **Cero servicios web o demonios**: Sin MLflow, ClearML ni W&B. Persistencia local directa, atómica y crash-consistent en disco (`JSONL` y ZIPs).
-- 🏷️ **Registro Inmutable (`mangosta.registry`)**: Decorador `@register_model` con prevención estricta de colisiones accidentales y resolución dinámica SemVer.
-- 📐 **Contratos de Tensores y Firmas (`mangosta.schema`)**: Inferencia automática de formas (batch dinámico `-1`/`None`) y dtypes mediante forward pass no destructivo, con validación estricta en inferencia.
-- 📦 **Empaquetado Autocontenido `.bundle` (`mangosta.bundle`)**: Formato ZIP atómico que encapsula pesos, manifiesto, recetas YAML y estado completo de entrenamiento (`train_state.pt`) con estados RNG de Python, PyTorch (CPU/CUDA) y NumPy.
-- 🔄 **Fault Tolerance y Reanudación Exacta (`mangosta.loader`)**: `resume_training` para continuar entrenamientos interrumpidos de forma 100% determinista.
-- 🚀 **Carga Universal Desacoplada (`load_bundle`)**: Reconstrucción de la arquitectura desde el registro sin necesidad de importar la clase del modelo en scripts de inferencia.
-- 📊 **Visualización Serverless (`mangosta.report` & CLI)**: Reportes HTML estáticos con gráficos interactivos offline, visualizador efímero en navegador (`mangosta view`) y visor en terminal (`mangosta inspect`).
+Modern MLOps frameworks frequently impose heavy operational complexity: daemon background services, external databases, cloud platform dependencies, and brittle networking setups.
+
+`mangosta` is engineered to provide local-first, serverless model lifecycle primitives directly within Python and standard file systems. It eliminates infrastructure overhead while delivering strict guarantees regarding reproducibility, tensor contracts, and crash-consistent persistence.
+
+### Architectural Principles
+
+- **Zero Service Dependencies**: No background daemons, web servers, or remote databases. All operations use direct, atomic file system calls (JSONL, standard ZIP archives, and optional SQLite).
+- **Strict Immutability**: Architectures registered in `ModelRegistry` cannot be silently overwritten, preventing silent behavioral divergence between training runs.
+- **Contract-Driven Inference**: Non-invasive tensor signature inference captures shapes (including dynamic batch dimensions) and data types, enforcing runtime verification before execution.
+- **Deterministic Fault Tolerance**: Checkpoints capture complete training state including optimizer parameters, learning rate schedulers, gradient scalers, and pseudo-random number generator (RNG) states across Python, PyTorch (CPU and CUDA), and NumPy.
+- **Decoupled Production Export**: Development artifacts (`.bundle`) remain optimized for training continuity and auditability, while standalone production formats (such as ONNX) are cleanly exported with full user control over dynamic axes, precision, and output restructuring.
 
 ---
 
-## ⚡ Quickstart en 3 Líneas
+## Comparison with Existing Tools
 
-### 1. Tracking local atómico
+| Capability | mangosta | MLflow | Weights & Biases | ClearML |
+| :--- | :--- | :--- | :--- | :--- |
+| **Infrastructure Overhead** | None (Local files only) | Local/Remote server | Cloud daemon / SaaS | Server / Agent daemon |
+| **External Services Required** | Zero | Web server + DB | API backend | Server stack + DB |
+| **Persistence Mechanism** | Atomic JSONL & ZIP | SQLite / File store | Cloud storage | MongoDB / MinIO |
+| **Fault-Tolerant RNG Restoration** | Native (CPU, CUDA, NumPy, Py) | Manual | Manual | Manual |
+| **Tensor Contract Validation** | Native (Pre-inference) | Signature schema | Logged schema only | Logged schema only |
+| **Packaging Architecture** | Modular (KISS & SOLID) | Monolithic package | Monolithic client | Complex SDK |
+| **Offline Operation** | 100% Offline | Partial | Requires offline mode | Requires local server |
+
+---
+
+## Installation
+
+Install using `uv` (recommended):
+
+```bash
+uv add mangosta
+```
+
+Or using standard `pip`:
+
+```bash
+pip install mangosta
+```
+
+### Optional Dependencies
+
+For ONNX graph verification using `onnx.checker`:
+
+```bash
+uv add "mangosta[onnx]"
+# or
+pip install "mangosta[onnx]"
+```
+
+---
+
+## Quickstart
+
+### 1. Atomic Local Tracking
+
+Track hyperparameters and step-level metrics with atomic disk flushing:
+
 ```python
 from mangosta import quick_track
 
-with quick_track(experiment="mnist", run_name="baseline") as run:
-    run.log_params({"lr": 1e-3, "batch_size": 64})
-    run.log_metric("loss", 0.42, step=1)
+with quick_track(experiment="vision", run_name="baseline_resnet") as run:
+    run.log_params({"learning_rate": 1e-3, "batch_size": 32, "weight_decay": 1e-4})
+    run.set_dataset("data/processed_images.parquet")
+    
+    for epoch in range(10):
+        # Training iteration ...
+        run.log_metric("train_loss", 0.342, step=epoch)
+        run.log_metric("val_accuracy", 0.912, step=epoch)
 ```
 
-### 2. Registrar arquitectura
+### 2. Architecture Registration
+
+Register neural network architectures under a family name and semantic version:
+
 ```python
+import torch
 import torch.nn as nn
 from mangosta import register_model
 
-@register_model(family="mlp", version="1.0.0")
-class MLP(nn.Module):
-    def __init__(self, in_dim=10, out_dim=2):
+@register_model(family="classifier", version="1.0.0")
+class ConvClassifier(nn.Module):
+    def __init__(self, in_channels: int = 3, num_classes: int = 10) -> None:
         super().__init__()
-        self.fc = nn.Linear(in_dim, out_dim)
-    def forward(self, x):
-        return self.fc(x)
+        self.encoder = nn.Sequential(
+            nn.Conv2d(in_channels, 16, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool2d((1, 1)),
+        )
+        self.head = nn.Linear(16, num_classes)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.head(self.encoder(x).flatten(1))
 ```
 
-### 3. Guardar y Cargar un `.bundle`
+### 3. Checkpointing and Fault-Tolerant Resumption
+
+Save complete training state including optimizer, scheduler, and all random generator states:
+
+```python
+from mangosta import save_bundle, resume_training, ModelRegistry
+
+# Save crash-consistent checkpoint
+save_bundle(
+    output_path="checkpoints/epoch_5.bundle",
+    model=model,
+    family="classifier",
+    version="1.0.0",
+    init_args={"in_channels": 3, "num_classes": 10},
+    sample_input=torch.randn(1, 3, 32, 32),
+    is_checkpoint=True,
+    optimizer=optimizer,
+    scheduler=scheduler,
+    epoch=5,
+    step=1250,
+)
+
+# Resume deterministically following an interruption
+fresh_model = ModelRegistry.build("classifier", version="1.0.0", in_channels=3, num_classes=10)
+fresh_optimizer = torch.optim.Adam(fresh_model.parameters(), lr=1e-3)
+fresh_scheduler = torch.optim.lr_scheduler.StepLR(fresh_optimizer, step_size=5)
+
+state = resume_training(
+    bundle_path="checkpoints/epoch_5.bundle",
+    model=fresh_model,
+    optimizer=fresh_optimizer,
+    scheduler=fresh_scheduler,
+    restore_rng=True,
+)
+
+start_epoch = state.epoch + 1
+start_step = state.step
+```
+
+### 4. Decoupled Production Inference
+
+Load models dynamically without importing the underlying model class in your serving scripts:
+
 ```python
 import torch
-from mangosta import save_bundle, load_bundle
+from mangosta import load_bundle
 
-# Guardar empaquetado con contrato inferido automáticamente
-save_bundle("model.bundle", model=model, family="mlp", version="1.0.0", sample_input=torch.randn(1, 10))
+# Reconstructs architecture via registry and mounts weights
+bundle = load_bundle("artifacts/model_final.bundle")
 
-# Cargar en producción sin conocer la clase del modelo
-bundle = load_bundle("model.bundle")
-predictions = bundle.predict(torch.randn(4, 10)) # Valida firma antes de ejecutar
+# Inference with automated input signature validation
+input_tensor = torch.randn(4, 3, 32, 32)
+predictions = bundle.predict(input_tensor)
 ```
 
----
+### 5. Standalone ONNX Export
 
-## 🛠️ CLI de Terminal
-
-`mangosta` incluye una herramienta de línea de comandos lista para usar:
-
-```bash
-# Inspeccionar un archivo .bundle en consola
-mangosta inspect artifacts/model.bundle
-
-# Generar un reporte interactivo HTML autocontenido (offline, sin servidores)
-mangosta report artifacts/model.bundle -o report.html
-mangosta report experiments/run_01 -o report.html
-
-# Iniciar un visor web local efímero (se detiene con Ctrl+C, cero demonios en segundo plano)
-mangosta view ./experiments
-
-# Exportar modelo o bundle a ONNX estándar para producción
-mangosta export-onnx artifacts/model.bundle -o model.onnx --fp16 --input-shape 1 3 512 512
-```
-
----
-
-## 🚀 Exportación a ONNX (`mangosta.exporter`)
-
-Para pasar de tu `.bundle` de desarrollo a un artefacto estándar de inferencia (compatible con TensorRT, ONNX Runtime, C++, Triton):
+Export directly to standard ONNX with automatic dictionary-to-tuple output unrolling and float16 precision:
 
 ```python
 from mangosta import export_onnx
 
-# Exportar modelo con mapeo automático de diccionario a tupla (ej. ParticleSizingNet)
 export_onnx(
-    model_or_bundle=base_model,  # o "artifacts/model.bundle"
-    output_path="model.onnx",
-    weights="checkpoint.pth",    # opcional si pasas un modelo o bundle
+    model_or_bundle="artifacts/model_final.bundle",
+    output_path="exports/model.onnx",
     sample_input_shape=(1, 3, 512, 512),
     output_mapping=["semantic_mask", "radius_map", "gradient_map"],
     input_names=["input0"],
     output_names=["output0", "output1", "output2"],
     dynamic_axes={
-        "input0": {0: "b", 2: "h", 3: "w"},
-        "output0": {0: "b", 2: "h", 3: "w"},
-        "output1": {0: "b", 2: "h", 3: "w"},
-        "output2": {0: "b", 2: "h", 3: "w"},
+        "input0": {0: "batch", 2: "height", 3: "width"},
+        "output0": {0: "batch", 2: "height", 3: "width"},
+        "output1": {0: "batch", 2: "height", 3: "width"},
+        "output2": {0: "batch", 2: "height", 3: "width"},
     },
-    float16=True,      # Convierte a FP16
+    float16=True,
     opset_version=18,
-    verify=True,       # Valida con onnx.checker
+    verify=True,
 )
 ```
 
 ---
 
-## 🔁 Tolerancia a Fallos y Reanudación Determinista
+## Command Line Interface (CLI)
 
-Para guardar un punto de control ante caídas o límites de tiempo de GPU (SLURM, spots):
-
-```python
-from mangosta import save_bundle, resume_training
-
-# Guardar punto de control con estado completo
-save_bundle(
-    "ckpt.bundle",
-    model=model,
-    family="mlp",
-    version="1.0.0",
-    is_checkpoint=True,
-    optimizer=optimizer,
-    scheduler=scheduler,
-    epoch=current_epoch,
-    step=global_step,
-)
-
-# Reanudar tras una interrupción
-state = resume_training("ckpt.bundle", model, optimizer, scheduler, restore_rng=True)
-start_epoch = state.epoch + 1
-start_step = state.step
-```
-
----
-
-## 💻 Desarrollo y Empaquetado con `uv`
+`mangosta` provides a zero-daemon CLI utility:
 
 ```bash
-# Sincronizar dependencias
+# Inspect internal bundle contents, tensor signatures, and metadata
+mangosta inspect checkpoints/epoch_5.bundle
+
+# Generate a self-contained, offline interactive HTML report
+mangosta report experiments/vision/baseline_resnet -o report.html
+mangosta report checkpoints/epoch_5.bundle -o report.html
+
+# Launch an ephemeral browser viewer (terminates cleanly with Ctrl+C)
+mangosta view ./experiments --port 8501
+
+# Export a bundle directly to ONNX from the terminal
+mangosta export-onnx checkpoints/epoch_5.bundle -o model.onnx --fp16 --input-shape 1 3 32 32 -m models.classifier
+```
+
+---
+
+## Package Architecture
+
+The library follows Single Responsibility (SRP) and Open-Closed (OCP) design principles:
+
+```text
+src/mangosta/
+|-- __init__.py           # Unified high-level public API
+|-- exceptions.py         # Domain-specific exception hierarchy
+|-- core/                 # Architecture registry and tensor contracts
+|   |-- registry.py       # ModelRegistry, @register_model, dynamic SemVer resolution
+|   `-- schema.py         # TensorSpec, ModelSchema, infer_schema
+|-- artifacts/            # Persistence, atomic packaging, and loading
+|   |-- bundle.py         # Atomic ZIP creation, RNG serialization, checkpointing
+|   `-- loader.py         # Decoupled reconstruction, LoadedBundle, resume_training
+|-- tracking/             # Experiment tracking and lineage
+|   |-- tracker.py        # RunTracker, quick_track, SHA-256 dataset fingerprinting
+|   `-- report.py         # Offline interactive HTML report generator
+|-- export/               # Standalone production exports
+|   `-- onnx.py           # ONNX exporter, dictionary unrolling, precision handling
+`-- cli/                  # Command-line interface
+    `-- main.py           # CLI entrypoints (inspect, report, view, export-onnx)
+```
+
+---
+
+## Development
+
+Run tests and verification suites locally:
+
+```bash
+# Sync virtual environment
 uv sync
 
-# Ejecutar suite de pruebas
+# Run automated tests with coverage
 uv run pytest -v --cov=mangosta
 
-# Formato y linter
-uv run ruff check src tests
-uv run ruff format src tests
+# Run linter and formatting checks
+uv run ruff check src tests examples
+uv run ruff format --check src tests examples
 
-# Ejecutar demostración completa del ciclo de vida
-uv run python examples/lifecycle_demo.py
-
-# Compilar para distribución en PyPI
+# Build package distributions (sdist and wheel)
 uv build
 ```
 
 ---
 
-## 📜 Licencia
+## License
 
 MIT License.
