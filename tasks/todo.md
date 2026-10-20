@@ -39,3 +39,8 @@
   - Acceptance: `lifecycle_demo.py` ejecuta el ciclo completo (train -> checkpoint -> resume determinista -> bundle final -> inference -> report). `uv build` compila wheel y tarball. Todos los tests al 100%.
   - Verify: `uv run python examples/lifecycle_demo.py && uv run pytest && uv build`
   - Files: `examples/lifecycle_demo.py`, `README.md`, `pyproject.toml`
+
+- [x] Task 9: Implementar módulo `mangosta.exporter` (exportación flexible a ONNX con mapeo de diccionarios)
+  - Acceptance: `export_onnx` soporta modelos directos o bundles, mapeo de salidas dict a tupla (`output_mapping`), FP16/FP32, `input_names`, `output_names`, `dynamic_axes`, verificación opcional con `onnx.checker` y comando CLI `mangosta export-onnx`.
+  - Verify: `uv run pytest tests/test_exporter.py -v`
+  - Files: `src/mangosta/exporter.py`, `src/mangosta/cli.py`, `src/mangosta/__init__.py`, `pyproject.toml`, `tests/test_exporter.py`

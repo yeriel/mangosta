@@ -15,6 +15,7 @@ from mangosta.exceptions import (
     SchemaError,
     SchemaValidationError,
 )
+from mangosta.exporter import export_onnx
 from mangosta.loader import LoadedBundle, ResumeState, load_bundle, resume_training
 from mangosta.registry import ModelRegistry, register_component, register_model
 from mangosta.report import generate_report
@@ -44,6 +45,8 @@ __all__ = [
     "read_bundle_manifest",
     "LoadedBundle",
     "ResumeState",
+    # Exporter
+    "export_onnx",
     # Report
     "generate_report",
     # Exceptions

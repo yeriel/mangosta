@@ -77,6 +77,39 @@ mangosta report experiments/run_01 -o report.html
 
 # Iniciar un visor web local efímero (se detiene con Ctrl+C, cero demonios en segundo plano)
 mangosta view ./experiments
+
+# Exportar modelo o bundle a ONNX estándar para producción
+mangosta export-onnx artifacts/model.bundle -o model.onnx --fp16 --input-shape 1 3 512 512
+```
+
+---
+
+## 🚀 Exportación a ONNX (`mangosta.exporter`)
+
+Para pasar de tu `.bundle` de desarrollo a un artefacto estándar de inferencia (compatible con TensorRT, ONNX Runtime, C++, Triton):
+
+```python
+from mangosta import export_onnx
+
+# Exportar modelo con mapeo automático de diccionario a tupla (ej. ParticleSizingNet)
+export_onnx(
+    model_or_bundle=base_model,  # o "artifacts/model.bundle"
+    output_path="model.onnx",
+    weights="checkpoint.pth",    # opcional si pasas un modelo o bundle
+    sample_input_shape=(1, 3, 512, 512),
+    output_mapping=["semantic_mask", "radius_map", "gradient_map"],
+    input_names=["input0"],
+    output_names=["output0", "output1", "output2"],
+    dynamic_axes={
+        "input0": {0: "b", 2: "h", 3: "w"},
+        "output0": {0: "b", 2: "h", 3: "w"},
+        "output1": {0: "b", 2: "h", 3: "w"},
+        "output2": {0: "b", 2: "h", 3: "w"},
+    },
+    float16=True,      # Convierte a FP16
+    opset_version=18,
+    verify=True,       # Valida con onnx.checker
+)
 ```
 
 ---

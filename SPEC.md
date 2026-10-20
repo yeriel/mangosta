@@ -16,29 +16,33 @@ Desarrollar `mangosta`, una librería Python lista para empaquetado y publicaci�
 4. **Empaquetado Autocontenido y Fault Tolerance (`mangosta.bundle`)**: Formato de archivo `.bundle` (ZIP atómico) que encapsula pesos, manifiesto, receta YAML y opcionalmente el estado completo de entrenamiento (`train_state.pt`: optimizador, scheduler, scaler AMP, epoch, step, RNG states de Python, PyTorch y NumPy).
 5. **Carga Universal (`mangosta.loader`)**: Reconstrucción desacoplada de la arquitectura desde el registro sin importar el código del modelo en el script de inferencia, y utilidades de reanudación exacta de entrenamiento (`resume_training`).
 6. **Visualización e Inspección Serverless (`mangosta.report` & CLI)**: Generación de reportes HTML estáticos y autocontenidos (curvas interactivas offline y metadatos sin servidores web), inspección rápida en terminal (`mangosta inspect`) y visualizador efímero en navegador (`mangosta view`) usando únicamente `http.server` estándar de Python (cero demonios).
+7. **Exportación Flexible a ONNX (`mangosta.exporter` & `mangosta export-onnx`)**: Exportación desacoplada a formato ONNX estándar con soporte para mapeo automático de salidas de diccionarios a tuplas (`output_mapping`), control de precisión (`float16`/`float32`), ejes dinámicos, opset configurable y verificación de grafo con dependencia opcional `mangosta[onnx]`.
 
 ---
 
 ## 2. Capability Map & Arquitectura de Módulos
 
 ```
-┌───────────────────────────────────────────────────────────────────────────┐
-│                              mangosta (API & CLI)                         │
-└──────┬──────────────┬──────────────┬──────────────┬──────────────┬────────┘
-       │              │              │              │              │
-       ▼              ▼              ▼              ▼              ▼
-┌──────────────┐┌──────────────┐┌──────────────┐┌─────────────┐┌────────────┐
-│   registry   ││    schema    ││   tracker    ││   bundle    ││   report   │
-│  (Catálogo   ││ (Contratos   ││  (Tracking   ││ (Empacado   ││  (Reporte  │
-│  Inmutable)  ││   E/S)       ││   Atómico)   ││   y ZIP)    ││  HTML/TUI) │
-└──────┬───────┘└──────┬───────┘└──────┬───────┘└──────┬──────┘└─────┬──────┘
-       │               │               │               │             │
-       └───────────────┼───────────────┴───────────────┼─────────────┘
-                       ▼                               ▼
-                 ┌─────────────┐                 ┌─────────────┐
-                 │   loader    │                 │  checkpoint │
-                 │(Inferencia) │                 │ (Reanudado) │
-                 └─────────────┘                 └─────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                                  mangosta (API & CLI)                                  │
+└──────┬──────────────┬──────────────┬──────────────┬──────────────┬──────────────┬──────┘
+       │              │              │              │              │              │
+       ▼              ▼              ▼              ▼              ▼              ▼
+┌──────────────┐┌──────────────┐┌──────────────┐┌─────────────┐┌────────────┐┌───────────┐
+│   registry   ││    schema    ││   tracker    ││   bundle    ││   report   ││  exporter │
+│  (Catálogo   ││ (Contratos   ││  (Tracking   ││ (Empacado   ││  (Reporte  ││  (ONNX /   │
+│  Inmutable)  ││   E/S)       ││   Atómico)   ││   y ZIP)    ││  HTML/TUI) ││ Producción│
+└──────┬───────┘└──────┬───────┘└──────┬───────┘└──────┬──────┘└─────┬──────┘└─────┬─────┘
+       │               │               │               │             │             │
+       └───────────────┼───────────────┴───────────────┼─────────────┘             │
+                       ▼                               ▼                           │
+                 ┌─────────────┐                 ┌─────────────┐                   │
+                 │   loader    │                 │  checkpoint │                   │
+                 │(Inferencia) │                 │ (Reanudado) │                   │
+                 └─────────────┘                 └─────────────┘                   ▼
+                                                                           ┌───────────────┐
+                                                                           │  model.onnx   │
+                                                                           └───────────────┘
 ```
 
 | Módulo ID | Responsabilidad | Dependencias internas |
@@ -49,7 +53,8 @@ Desarrollar `mangosta`, una librería Python lista para empaquetado y publicaci�
 | `bundle` | Empaquetado de artefactos `.bundle` (ZIP atómico), guardado de `state_dict`, `train_state` y `manifest.json` | `schema` |
 | `loader` | Carga de bundles (`load_bundle`), instanciación vía `registry`, validación I/O y `resume_training` | `registry`, `schema`, `bundle` |
 | `report` | Generación de reporte HTML estático autocontenido y visualización de curvas/artefactos | `tracker`, `bundle` |
-| `cli` | Comandos de terminal: `mangosta inspect`, `mangosta report`, `mangosta view` (servidor efímero) | `loader`, `report`, `bundle` |
+| `exporter` | Exportación a ONNX desacoplada, mapeo de salidas diccionarios/tuplas, FP16/FP32 y validación | `loader`, `bundle`, `schema` |
+| `cli` | Comandos de terminal: `mangosta inspect`, `mangosta report`, `mangosta view`, `mangosta export-onnx` | `loader`, `report`, `bundle`, `exporter` |
 
 ---
 
@@ -61,8 +66,9 @@ Desarrollar `mangosta`, una librería Python lista para empaquetado y publicaci�
 - **Dependencias Base (Ultra-ligeras)**:
   - `torch >= 2.0.0`
   - `pyyaml >= 6.0`
-  - `pydantic >= 2.0` (o dataclasses tipadas estrictas / validación de manifiesto)
-  - `packaging >= 23.0` (para validación y comparación SemVer de versiones de modelos)
+  - `packaging >= 23.0`
+- **Dependencias Opcionales**:
+  - `onnx >= 1.14.0` (para verificación del grafo con `onnx.checker` en `mangosta[onnx]`)
 - **Dependencias de Desarrollo**:
   - `pytest >= 8.0`
   - `pytest-cov`
@@ -181,15 +187,36 @@ mangosta/
   start_step = state.step
   ```
 
-### 6.5 `mangosta.report` y CLI de Terminal
-- **Reporte HTML Estático Autocontenido**:
-  - `generate_report(target_path, output_html="report.html")`: Lee el directorio de una corrida (con `metrics.jsonl`) o un archivo `.bundle`.
-  - Embebe CSS y motor de renderizado de gráficos (SVG/Canvas interactivo en JS puro sin dependencias de red externas), generando un archivo `.html` 100% independiente y portable.
-  - Visualiza: curvas de pérdidas y métricas paso a paso, parámetros de configuración, metadatos del entorno y firma de tensores.
-- **CLI (`mangosta`)**:
-  - `mangosta inspect <bundle_path>`: Muestra en la terminal un resumen formateado del modelo, pesos, forma de tensores y métricas.
-  - `mangosta report <run_or_bundle_path> [-o report.html]`: Genera el reporte HTML directamente desde la terminal.
-  - `mangosta view <directory> [--port 8501]`: Inicia un servidor web efímero utilizando el módulo nativo `http.server` de Python para visualizar reportes o bundles en el navegador. Se termina limpiamente con `Ctrl+C` sin dejar procesos en segundo plano.
+### 6.6 `mangosta.exporter` y Exportación ONNX
+- **Función Principal**:
+  ```python
+  export_onnx(
+      model_or_bundle: Union[nn.Module, str, Path],
+      output_path: Union[str, Path],
+      weights: Optional[Union[str, Path]] = None,
+      sample_input: Optional[Any] = None,
+      sample_input_shape: Optional[Tuple[int, ...]] = None,
+      output_mapping: Optional[Sequence[str]] = None,
+      input_names: Optional[Sequence[str]] = None,
+      output_names: Optional[Sequence[str]] = None,
+      dynamic_axes: Optional[Dict[str, Dict[int, str]]] = None,
+      float16: bool = False,
+      opset_version: int = 18,
+      do_constant_folding: bool = True,
+      device: Optional[Union[str, torch.device]] = None,
+      verify: bool = True,
+  ) -> Path
+  ```
+- **Mapeo Automático Diccionario -> Tupla**:
+  Si el modelo retorna un `dict` y se provee `output_mapping=["semantic_mask", "radius_map", "gradient_map"]`, se envuelve automáticamente el modelo en un wrapper interno transparente para retornar la tupla en ese orden estricto.
+- **Carga Polimórfica de Pesos**:
+  Si se pasa `weights`:
+  - Soporta archivos `.pth`/`.pt` estándar buscando llaves comunes (`"model_state_dict"`, `"state_dict"`, o pesos directos).
+  - Soporta archivos `.bundle` de mangosta extrayendo `weights.pt`.
+- **Verificación Opcional**:
+  Si `verify=True`, intenta importar `onnx` y ejecuta `onnx.checker.check_model`. Si `onnx` no está instalado, emite un aviso informativo amigable sin fallar la exportación.
+- **CLI**:
+  `mangosta export-onnx <bundle_or_weights> -o model.onnx [--fp16] [--opset 18]`
 
 ---
 

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from mangosta.bundle import read_bundle_manifest
+from mangosta.exporter import export_onnx
 from mangosta.report import generate_report
 
 
@@ -172,6 +173,28 @@ def main() -> None:
         "--no-browser", action="store_true", help="Do not automatically open browser"
     )
 
+    # Subcommand: export-onnx
+    export_parser = subparsers.add_parser("export-onnx", help="Export a bundle to standalone ONNX")
+    export_parser.add_argument("bundle", help="Path to .bundle file")
+    export_parser.add_argument("-o", "--output", required=True, help="Target .onnx output path")
+    export_parser.add_argument(
+        "--fp16", action="store_true", help="Export with Float16 half precision"
+    )
+    export_parser.add_argument(
+        "--opset", type=int, default=18, help="ONNX opset version (default: 18)"
+    )
+    export_parser.add_argument(
+        "--output-mapping", nargs="+", help="Ordered keys to unroll dictionary output"
+    )
+    export_parser.add_argument(
+        "--input-shape", nargs="+", type=int, help="Dummy input shape (e.g. 1 3 224 224)"
+    )
+    export_parser.add_argument(
+        "-m",
+        "--module",
+        help="Python module to import containing registered models (e.g. models or examples.lifecycle_demo)",
+    )
+
     args = parser.parse_args()
 
     if args.command == "inspect":
@@ -180,6 +203,26 @@ def main() -> None:
         run_report(args.target, args.output)
     elif args.command == "view":
         run_view(args.target, port=args.port, open_browser=not args.no_browser)
+    elif args.command == "export-onnx":
+        if args.module:
+            import importlib
+            import sys
+            from pathlib import Path
+
+            if str(Path.cwd()) not in sys.path:
+                sys.path.insert(0, str(Path.cwd()))
+            importlib.import_module(args.module)
+
+        shape = tuple(args.input_shape) if args.input_shape else (1, 4)
+        out = export_onnx(
+            model_or_bundle=args.bundle,
+            output_path=args.output,
+            sample_input_shape=shape,
+            output_mapping=args.output_mapping,
+            float16=args.fp16,
+            opset_version=args.opset,
+        )
+        print(f"🥭 Successfully exported model to ONNX: {out}")
 
 
 if __name__ == "__main__":
