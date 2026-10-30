@@ -201,7 +201,7 @@ def _write_entrypoints(dest: Path) -> None:
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from mangosta import quick_track, save_bundle, resume_training
+from mangosta import RunTracker, save_bundle, resume_training
 from src.utils.config import load_config
 from src.data.loader import build_dataloaders
 from src.models import build_model
@@ -229,7 +229,7 @@ def main():
         start_epoch = state.epoch + 1
         print(f"Resumed from checkpoint: Epoch {state.epoch}, Step {state.step}")
 
-    with quick_track(experiment=exp_name, run_name="run_01") as run:
+    with RunTracker(experiment=exp_name, run_name="run_01") as run:
         run.log_params(config.get("training", {}))
         run.set_dataset("data/processed/synthetic_data.csv")
 

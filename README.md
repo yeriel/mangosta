@@ -81,12 +81,13 @@ This scaffolds:
 
 ### 2. Atomic Local Tracking and Artifact Logging
 
-Track hyperparameters, step-level metrics, and validation artifacts/images with atomic disk flushing:
+Track hyperparameters, step-level metrics, and validation artifacts/images with atomic disk flushing using `RunTracker`:
 
 ```python
-from mangosta import quick_track
+from mangosta import RunTracker
 
-with quick_track(experiment="vision", run_name="baseline_resnet") as run:
+# RunTracker provides native context management and clean static typing
+with RunTracker(experiment="vision", run_name="baseline_resnet") as run:
     run.log_params({"learning_rate": 1e-3, "batch_size": 32, "weight_decay": 1e-4})
     run.set_dataset("data/processed_images.parquet")
     
@@ -101,6 +102,8 @@ with quick_track(experiment="vision", run_name="baseline_resnet") as run:
     # Log arbitrary training artifacts (e.g. confusion matrix, predictions CSV)
     run.log_artifact("outputs/confusion_matrix.json")
 ```
+
+*(Note: `quick_track(...)` is also available as a shorthand alias).*
 
 ### 3. Architecture Registration
 

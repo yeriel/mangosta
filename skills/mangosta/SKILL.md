@@ -58,7 +58,12 @@ All primary entrypoints are exposed at the top-level package namespace (`from ma
    The `.bundle` archive is designed for internal development, training resumption, and contract verification.
    For deployment to Triton, TensorRT, or ONNX Runtime, use `export_onnx()` to create a standalone `.onnx` file outside the bundle.
 
-8. **Zero-Daemon Visual Inspection**:
+8. **Tracking Standard: Always Generate `RunTracker`**:
+   AI agents MUST default to generating `with RunTracker(experiment=..., run_name=...) as run:` for all production scripts, pipelines, and training loops.
+   - `RunTracker` is the primary domain class with native `__enter__` and `__exit__` dunder methods, explicit typing (`run: RunTracker`), and full IDE autocompletion without generator wrapper indirection.
+   - `quick_track` is preserved as a convenience alias for quick 1-line prototypes, but `RunTracker` is the official architectural standard.
+
+9. **Zero-Daemon Visual Inspection**:
    When users want to inspect runs, metric curves, and artifacts, instruct them to run `mangosta view` (or invoke `start_viewer(".")`).
    Never attempt to spin up heavy web servers or external daemons.
 
@@ -104,12 +109,13 @@ class ImageClassifier(nn.Module):
         return self.head(self.encoder(x).flatten(1))
 ```
 
-### 3. Atomic Experiment Tracking with Artifact & Image Logging
+### 3. Atomic Experiment Tracking with Artifact & Image Logging (Standard: `RunTracker`)
 
 ```python
-from mangosta import quick_track
+from mangosta import RunTracker
 
-with quick_track(experiment="vision_models", run_name="exp_run_01") as run:
+# RunTracker is the canonical standard context manager for training runs
+with RunTracker(experiment="vision_models", run_name="exp_run_01") as run:
     # Compute SHA-256 fingerprint for data lineage audit
     data_hash = run.set_dataset("data/training_split.parquet")
     run.log_params({"lr": 1e-3, "batch_size": 32, "weight_decay": 1e-4})
@@ -123,6 +129,8 @@ with quick_track(experiment="vision_models", run_name="exp_run_01") as run:
     # Log training artifacts (confusion matrix, evaluation metrics JSON)
     run.log_artifact("outputs/confusion_matrix.json")
 ```
+
+*(Note: `from mangosta import quick_track` is also available as a shorthand alias, but `RunTracker` is preferred for explicit typing and production code).*
 
 ### 4. Checkpointing and Deterministic Resumption
 
