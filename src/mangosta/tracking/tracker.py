@@ -8,10 +8,11 @@ import os
 import platform
 import subprocess
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 
 def compute_sha256(path: str | Path, chunk_size: int = 65536) -> str:
