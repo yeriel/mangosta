@@ -10,6 +10,7 @@ from mangosta.artifacts import (
     resume_training,
     save_bundle,
 )
+from mangosta.cli.init_project import init_project
 from mangosta.core import (
     ModelRegistry,
     ModelSchema,
@@ -36,12 +37,15 @@ from mangosta.tracking import (
     compute_sha256,
     generate_report,
     quick_track,
+    start_viewer,
 )
 
-__version__ = "0.1.0a1"
+__version__ = "0.2.0a1"
 
 __all__ = [
     "__version__",
+    # CLI / Scaffolding
+    "init_project",
     # Core
     "register_model",
     "register_component",
@@ -54,6 +58,7 @@ __all__ = [
     "quick_track",
     "compute_sha256",
     "generate_report",
+    "start_viewer",
     # Artifacts
     "save_bundle",
     "load_bundle",

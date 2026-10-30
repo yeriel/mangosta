@@ -20,9 +20,9 @@ When generating code or debugging with `mangosta`, adhere to its modular package
 
 - `mangosta.core`: Model architecture registration (`ModelRegistry`, `@register_model`) and tensor I/O contracts (`ModelSchema`, `TensorSpec`, `infer_schema`).
 - `mangosta.artifacts`: Atomic ZIP `.bundle` creation (`save_bundle`), decoupled inference mounting (`load_bundle`), and fault-tolerant state recovery (`resume_training`).
-- `mangosta.tracking`: Atomic step-level metrics logging (`RunTracker`, `quick_track`) and dataset fingerprinting (`compute_sha256`).
+- `mangosta.tracking`: Atomic step-level metrics logging (`RunTracker`, `quick_track`), artifact & image logging (`log_artifact`, `log_image`), zero-daemon viewer (`start_viewer`), and dataset fingerprinting (`compute_sha256`).
 - `mangosta.export`: Standalone production export utilities (`export_onnx`) with dictionary-to-tuple output unrolling and float16 precision.
-- `mangosta.cli`: Zero-daemon terminal commands (`inspect`, `report`, `view`, `export-onnx`).
+- `mangosta.cli`: Zero-daemon terminal commands (`init`, `inspect`, `report`, `view`, `export-onnx`).
 
 All primary entrypoints are exposed at the top-level package namespace (`from mangosta import ...`).
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from mangosta.cli.init_project import init_project
 from mangosta.cli.main import (
     inspect_bundle,
     main,
@@ -11,6 +12,7 @@ from mangosta.cli.main import (
 
 __all__ = [
     "main",
+    "init_project",
     "inspect_bundle",
     "run_report",
     "run_view",

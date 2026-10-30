@@ -3,18 +3,15 @@
 from __future__ import annotations
 
 import argparse
-import http.server
-import socketserver
 import sys
-import tempfile
-import webbrowser
 import zipfile
 from pathlib import Path
-from typing import Any
 
 from mangosta.artifacts.bundle import read_bundle_manifest
+from mangosta.cli.init_project import init_project
 from mangosta.export.onnx import export_onnx
 from mangosta.tracking.report import generate_report
+from mangosta.tracking.viewer import start_viewer
 
 
 def inspect_bundle(bundle_path: str) -> None:
@@ -31,7 +28,7 @@ def inspect_bundle(bundle_path: str) -> None:
         sys.exit(1)
 
     print("\n" + "=" * 60)
-    print("🥭 MANGOSTA BUNDLE INSPECTOR")
+    print("MANGOSTA BUNDLE INSPECTOR")
     print("=" * 60)
     print(f"File:           {path.name} ({path.stat().st_size / 1024:.1f} KB)")
     print(f"Family:         {manifest.get('family', 'N/A')}")
@@ -56,7 +53,7 @@ def inspect_bundle(bundle_path: str) -> None:
     # Print Schema
     schema = manifest.get("schema")
     if schema:
-        print("\n📐 I/O Schema Contract:")
+        print("\nI/O Schema Contract:")
         print(f"  Input structure:  {schema.get('input_structure')}")
         inputs = schema.get("inputs", [])
         if isinstance(inputs, list):
@@ -82,7 +79,7 @@ def inspect_bundle(bundle_path: str) -> None:
     # Print Metrics
     metrics = manifest.get("metrics")
     if metrics:
-        print("\n📊 Recorded Metrics:")
+        print("\nRecorded Metrics:")
         for k, v in metrics.items():
             print(f"  {k}: {v}")
 
@@ -93,53 +90,20 @@ def run_report(target_path: str, output: str) -> None:
     """Generate standalone HTML report."""
     try:
         out_path = generate_report(target_path, output)
-        print(f"🥭 Report successfully generated at: {out_path}")
+        print(f"Report successfully generated at: {out_path}")
     except Exception as e:
         print(f"Error generating report: {e}", file=sys.stderr)
         sys.exit(1)
 
 
-def run_view(target_path: str, port: int = 8501, open_browser: bool = True) -> None:
+def run_view(target_path: str = ".", port: int = 8501, open_browser: bool = True) -> None:
     """Ephemeral zero-daemon viewer using Python's standard library http.server."""
     target = Path(target_path).resolve()
     if not target.exists():
         print(f"Error: Target path '{target_path}' does not exist.", file=sys.stderr)
         sys.exit(1)
 
-    temp_dir = tempfile.TemporaryDirectory()
-    try:
-        if target.is_file() and target.suffix == ".bundle":
-            html_dest = Path(temp_dir.name) / "index.html"
-            generate_report(target, html_dest)
-            serve_dir = temp_dir.name
-        elif target.is_dir() and (target / "metrics.jsonl").exists():
-            html_dest = Path(temp_dir.name) / "index.html"
-            generate_report(target, html_dest)
-            serve_dir = temp_dir.name
-        else:
-            serve_dir = str(target)
-
-        class CustomHandler(http.server.SimpleHTTPRequestHandler):
-            def __init__(self, *args: Any, **kwargs: Any) -> None:
-                super().__init__(*args, directory=serve_dir, **kwargs)
-
-            def log_message(self, format: str, *args: Any) -> None:
-                # Suppress verbose access logs for clean CLI experience
-                pass
-
-        print(f"\n🥭 Starting ephemeral mangosta viewer on http://localhost:{port}")
-        print("Press Ctrl+C to stop the viewer.\n")
-
-        if open_browser:
-            webbrowser.open(f"http://localhost:{port}")
-
-        with socketserver.TCPServer(("", port), CustomHandler) as httpd:
-            try:
-                httpd.serve_forever()
-            except KeyboardInterrupt:
-                print("\nShutting down ephemeral viewer cleanly.")
-    finally:
-        temp_dir.cleanup()
+    start_viewer(target, port=port, open_browser=open_browser)
 
 
 def main() -> None:
@@ -149,6 +113,20 @@ def main() -> None:
         description="Lightweight MLOps and Model Lifecycle Management for PyTorch",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # Subcommand: init
+    init_parser = subparsers.add_parser("init", help="Initialize a structured PyTorch project")
+    init_parser.add_argument(
+        "name",
+        nargs="?",
+        default=".",
+        help="Project directory or name (default: current directory)",
+    )
+    init_parser.add_argument(
+        "--template",
+        default="default",
+        help="Project template (default: default)",
+    )
 
     # Subcommand: inspect
     inspect_parser = subparsers.add_parser("inspect", help="Inspect a .bundle archive in terminal")
@@ -165,7 +143,12 @@ def main() -> None:
 
     # Subcommand: view
     view_parser = subparsers.add_parser("view", help="Start ephemeral local browser viewer")
-    view_parser.add_argument("target", help="Path to run directory or .bundle file")
+    view_parser.add_argument(
+        "target",
+        nargs="?",
+        default=".",
+        help="Path to runs directory, experiment folder, or .bundle file (default: current directory)",
+    )
     view_parser.add_argument(
         "--port", type=int, default=8501, help="Port to serve on (default: 8501)"
     )
@@ -197,7 +180,10 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    if args.command == "inspect":
+    if args.command == "init":
+        dest = init_project(args.name, template=args.template)
+        print(f"Initialized mangosta project in '{dest}'")
+    elif args.command == "inspect":
         inspect_bundle(args.bundle)
     elif args.command == "report":
         run_report(args.target, args.output)
@@ -222,7 +208,7 @@ def main() -> None:
             float16=args.fp16,
             opset_version=args.opset,
         )
-        print(f"🥭 Successfully exported model to ONNX: {out}")
+        print(f"Successfully exported model to ONNX: {out}")
 
 
 if __name__ == "__main__":

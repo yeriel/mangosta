@@ -64,9 +64,24 @@ pip install "mangosta[onnx]"
 
 ## Quickstart
 
-### 1. Atomic Local Tracking
+### 1. Scaffold a Production Project
 
-Track hyperparameters and step-level metrics with atomic disk flushing:
+Generate an entire Clean Architecture PyTorch project in one command:
+
+```bash
+mangosta init my_project
+cd my_project
+```
+
+This scaffolds:
+- `configs/`: Hierarchical configurations (`base.yaml`, experiment overrides)
+- `data/`: Raw and processed data partitions
+- `src/`: Decoupled `data/`, `models/`, `engine/`, and `utils/`
+- Root entrypoints: `train.py`, `infer.py`, `benchmark.py`
+
+### 2. Atomic Local Tracking and Artifact Logging
+
+Track hyperparameters, step-level metrics, and validation artifacts/images with atomic disk flushing:
 
 ```python
 from mangosta import quick_track
@@ -79,9 +94,15 @@ with quick_track(experiment="vision", run_name="baseline_resnet") as run:
         # Training iteration ...
         run.log_metric("train_loss", 0.342, step=epoch)
         run.log_metric("val_accuracy", 0.912, step=epoch)
+
+    # Log validation images (supports PyTorch tensors, NumPy arrays, or file paths)
+    run.log_image("val_samples", sample_tensor, step=10)
+
+    # Log arbitrary training artifacts (e.g. confusion matrix, predictions CSV)
+    run.log_artifact("outputs/confusion_matrix.json")
 ```
 
-### 2. Architecture Registration
+### 3. Architecture Registration
 
 Register neural network architectures under a family name and semantic version:
 
@@ -193,15 +214,22 @@ export_onnx(
 `mangosta` provides a zero-daemon CLI utility:
 
 ```bash
+# Scaffold a structured PyTorch project
+mangosta init my_project
+
+# Launch the zero-daemon local experiment and artifact dashboard
+# Opens your default browser automatically to view runs, metric curves, and logged images
+mangosta view
+
+# View a specific experiment directory or bundle
+mangosta view ./experiments --port 8501
+
 # Inspect internal bundle contents, tensor signatures, and metadata
 mangosta inspect checkpoints/epoch_5.bundle
 
 # Generate a self-contained, offline interactive HTML report
 mangosta report experiments/vision/baseline_resnet -o report.html
 mangosta report checkpoints/epoch_5.bundle -o report.html
-
-# Launch an ephemeral browser viewer (terminates cleanly with Ctrl+C)
-mangosta view ./experiments --port 8501
 
 # Export a bundle directly to ONNX from the terminal
 mangosta export-onnx checkpoints/epoch_5.bundle -o model.onnx --fp16 --input-shape 1 3 32 32 -m models.classifier
@@ -223,13 +251,15 @@ src/mangosta/
 |-- artifacts/            # Persistence, atomic packaging, and loading
 |   |-- bundle.py         # Atomic ZIP creation, RNG serialization, checkpointing
 |   `-- loader.py         # Decoupled reconstruction, LoadedBundle, resume_training
-|-- tracking/             # Experiment tracking and lineage
-|   |-- tracker.py        # RunTracker, quick_track, SHA-256 dataset fingerprinting
+|-- tracking/             # Experiment tracking, artifacts, and visualization
+|   |-- tracker.py        # RunTracker, quick_track, log_image, log_artifact
+|   |-- viewer.py         # Zero-daemon local SPA browser viewer and REST API
 |   `-- report.py         # Offline interactive HTML report generator
 |-- export/               # Standalone production exports
 |   `-- onnx.py           # ONNX exporter, dictionary unrolling, precision handling
 `-- cli/                  # Command-line interface
-    `-- main.py           # CLI entrypoints (inspect, report, view, export-onnx)
+    |-- main.py           # CLI entrypoint (init, inspect, report, view, export-onnx)
+    `-- init_project.py   # Project scaffolding engine
 ```
 
 ---

@@ -71,7 +71,9 @@ def main() -> None:
 
     # 1. Instantiate and build model
     print("\n[Step 1] Instantiating ParticleSizingNet from registry...")
-    model = ModelRegistry.build("particle_sizing_net", version="1.0.0", in_channels=3, base_channels=8)
+    model = ModelRegistry.build(
+        "particle_sizing_net", version="1.0.0", in_channels=3, base_channels=8
+    )
     model.eval()
 
     sample_input = torch.randn(1, 3, 256, 256)

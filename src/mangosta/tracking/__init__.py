@@ -8,10 +8,12 @@ from mangosta.tracking.tracker import (
     compute_sha256,
     quick_track,
 )
+from mangosta.tracking.viewer import start_viewer
 
 __all__ = [
     "RunTracker",
     "quick_track",
     "compute_sha256",
     "generate_report",
+    "start_viewer",
 ]

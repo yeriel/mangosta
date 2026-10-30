@@ -60,7 +60,9 @@ def main() -> None:
     work_dir.mkdir(parents=True, exist_ok=True)
 
     dataset_file = work_dir / "synthetic_data.csv"
-    dataset_file.write_text("x0,x1,x2,x3,y\n" + "\n".join("1.0,2.0,3.0,4.0,10.0" for _ in range(100)))
+    dataset_file.write_text(
+        "x0,x1,x2,x3,y\n" + "\n".join("1.0,2.0,3.0,4.0,10.0" for _ in range(100))
+    )
 
     torch.manual_seed(1337)
     np.random.seed(1337)
@@ -71,12 +73,16 @@ def main() -> None:
     report_html_path = work_dir / "lifecycle_report.html"
 
     print("\n[Phase 1] Starting experiment tracking with quick_track...")
-    with quick_track(run_name="demo_run", experiment="regression_demo", root_dir=work_dir / "experiments") as run:
+    with quick_track(
+        run_name="demo_run", experiment="regression_demo", root_dir=work_dir / "experiments"
+    ) as run:
         data_hash = run.set_dataset(dataset_file)
         run.log_params({"family": "mlp_regressor", "lr": 0.01, "hidden_dim": 16})
         print(f"Dataset SHA-256: {data_hash[:16]}...")
 
-        model = ModelRegistry.build("mlp_regressor", version="1.0.0", in_features=4, hidden_dim=16, out_features=1)
+        model = ModelRegistry.build(
+            "mlp_regressor", version="1.0.0", in_features=4, hidden_dim=16, out_features=1
+        )
         optimizer = optim.Adam(model.parameters(), lr=0.01)
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=0.5)
         criterion = nn.MSELoss()
@@ -96,7 +102,9 @@ def main() -> None:
                 run.log_metric("train_loss", loss.item(), step=global_step)
 
             scheduler.step()
-            print(f"Epoch {epoch} completed. Loss: {loss.item():.4f}, LR: {optimizer.param_groups[0]['lr']}")
+            print(
+                f"Epoch {epoch} completed. Loss: {loss.item():.4f}, LR: {optimizer.param_groups[0]['lr']}"
+            )
 
         print(f"\n[Phase 2] Saving fault-tolerant checkpoint to {checkpoint_bundle_path.name}...")
         save_bundle(
@@ -118,7 +126,9 @@ def main() -> None:
         print("\n[Phase 3] Simulating interruption and re-initializing model state...")
         del model, optimizer, scheduler
 
-        fresh_model = ModelRegistry.build("mlp_regressor", version="1.0.0", in_features=4, hidden_dim=16, out_features=1)
+        fresh_model = ModelRegistry.build(
+            "mlp_regressor", version="1.0.0", in_features=4, hidden_dim=16, out_features=1
+        )
         fresh_optimizer = optim.Adam(fresh_model.parameters(), lr=0.01)
         fresh_scheduler = optim.lr_scheduler.StepLR(fresh_optimizer, step_size=2, gamma=0.5)
 
@@ -130,7 +140,9 @@ def main() -> None:
             scheduler=fresh_scheduler,
             restore_rng=True,
         )
-        print(f"Resumed at Epoch {resume_state.epoch}, Step {resume_state.step}. RNG restored: {resume_state.rng_restored}")
+        print(
+            f"Resumed at Epoch {resume_state.epoch}, Step {resume_state.step}. RNG restored: {resume_state.rng_restored}"
+        )
 
         for epoch in range(resume_state.epoch + 1, 5):
             for step in range(5):
@@ -147,7 +159,9 @@ def main() -> None:
                 run.log_metric("train_loss", loss.item(), step=global_step)
 
             fresh_scheduler.step()
-            print(f"Epoch {epoch} completed. Loss: {loss.item():.4f}, LR: {fresh_optimizer.param_groups[0]['lr']}")
+            print(
+                f"Epoch {epoch} completed. Loss: {loss.item():.4f}, LR: {fresh_optimizer.param_groups[0]['lr']}"
+            )
 
         print(f"\n[Phase 4] Exporting final production bundle to {final_bundle_path.name}...")
         save_bundle(
@@ -171,7 +185,9 @@ def main() -> None:
     bundle = load_bundle(final_bundle_path)
     print(f"Loaded bundle: {bundle.family} v{bundle.version}")
     print(f"Model architecture: {type(bundle.model).__name__}")
-    print(f"Contract input schema: {bundle.schema.inputs[0].shape} ({bundle.schema.inputs[0].dtype})")
+    print(
+        f"Contract input schema: {bundle.schema.inputs[0].shape} ({bundle.schema.inputs[0].dtype})"
+    )
 
     test_batch = torch.randn(4, 4)
     predictions = bundle.predict(test_batch)

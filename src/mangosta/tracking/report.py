@@ -203,7 +203,7 @@ def generate_report(
   <div class="container">
     <header>
       <div>
-        <h1>🥭 mangosta Report</h1>
+        <h1>mangosta Report</h1>
         <div style="color: var(--text-muted); font-size: 1.1rem; margin-top: 4px;">{html.escape(data["title"])}</div>
       </div>
       <span class="badge">{html.escape(str(data["status"]))}</span>
@@ -230,7 +230,7 @@ def generate_report(
 
     <div class="chart-container">
       <div class="chart-header">
-        <h2>📈 Metric Curves</h2>
+        <h2>Metric Curves</h2>
         <select id="metricSelector" onchange="renderChart(this.value)"></select>
       </div>
       <div id="chartWrapper">
@@ -241,11 +241,11 @@ def generate_report(
 
     <div class="grid" style="grid-template-columns: 1fr 1fr;">
       <div class="card">
-        <h3 style="margin-bottom: 12px;">⚙️ Parameters / Init Args</h3>
+        <h3 style="margin-bottom: 12px;">Parameters / Init Args</h3>
         <pre>{html.escape(params_json)}</pre>
       </div>
       <div class="card">
-        <h3 style="margin-bottom: 12px;">📐 I/O Schema Contract</h3>
+        <h3 style="margin-bottom: 12px;">I/O Schema Contract</h3>
         <pre>{html.escape(schema_json)}</pre>
       </div>
     </div>

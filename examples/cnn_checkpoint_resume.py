@@ -90,7 +90,9 @@ def main() -> None:
     random.seed(42)
 
     print("\n[Phase 1] Initial training execution (Epochs 1 and 2)...")
-    with quick_track(experiment="cnn_experiment", run_name="baseline_cnn", root_dir=artifacts_dir / "runs") as tracker:
+    with quick_track(
+        experiment="cnn_experiment", run_name="baseline_cnn", root_dir=artifacts_dir / "runs"
+    ) as tracker:
         tracker.log_params({"model": "simple_cnn", "optimizer": "adamw", "lr": 1e-3})
 
         model = ModelRegistry.build("simple_cnn", version="1.0.0", in_channels=1, num_classes=10)
@@ -103,7 +105,9 @@ def main() -> None:
             loss = run_training_step(model, optimizer, criterion, device)
             scheduler.step()
             tracker.log_metric("train_loss", loss, step=epoch)
-            print(f"Epoch {epoch} complete | Loss: {loss:.4f} | LR: {scheduler.get_last_lr()[0]:.6f}")
+            print(
+                f"Epoch {epoch} complete | Loss: {loss:.4f} | LR: {scheduler.get_last_lr()[0]:.6f}"
+            )
 
         # Save checkpoint
         print(f"\n[Phase 2] Saving crash-consistent checkpoint to: {checkpoint_file.name}")
@@ -164,7 +168,9 @@ def main() -> None:
     for epoch in range(resume_state.epoch + 1, 6):
         loss = run_training_step(fresh_model, fresh_optimizer, criterion, device)
         fresh_scheduler.step()
-        print(f"Epoch {epoch} complete | Loss: {loss:.4f} | LR: {fresh_scheduler.get_last_lr()[0]:.6f}")
+        print(
+            f"Epoch {epoch} complete | Loss: {loss:.4f} | LR: {fresh_scheduler.get_last_lr()[0]:.6f}"
+        )
 
     # Export final inference bundle
     print(f"\n[Phase 6] Exporting production bundle to: {final_file.name}")
