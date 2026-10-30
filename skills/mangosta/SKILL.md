@@ -2,10 +2,10 @@
 name: mangosta
 description: >-
   Manages PyTorch model lifecycle without external daemons or web services:
-  immutable architecture registration, contract-based tensor signature validation,
-  atomic local experiment tracking, fault-tolerant checkpointing with RNG state restoration,
-  and decoupled ONNX export. Activate this skill whenever the user is building, tracking,
-  packaging, resuming, or exporting PyTorch models.
+  project scaffolding, immutable architecture registration, contract-based tensor signature validation,
+  atomic local experiment tracking, artifact and image logging, fault-tolerant checkpointing with RNG state restoration,
+  zero-daemon browser visualization, and decoupled ONNX export. Activate this skill whenever the user is scaffolding,
+  building, tracking, packaging, resuming, visualizing, or exporting PyTorch models.
 ---
 
 # mangosta: Agent Engineering Guide
@@ -30,31 +30,59 @@ All primary entrypoints are exposed at the top-level package namespace (`from ma
 
 ## Agent Operational Rules
 
-1. **Never Bypass the Registry for Production Bundles**:
+1. **Scaffold Clean Projects First**:
+   When asked to bootstrap a new PyTorch project, use `mangosta init <name>` or `from mangosta import init_project`.
+   This creates a standardized Clean Architecture tree with configs, data partitions, registered models, and train/infer/benchmark scripts.
+
+2. **Never Bypass the Registry for Production Bundles**:
    Always register neural network architectures using `@register_model(family="<name>", version="<semver>")`.
    This guarantees that `load_bundle()` can reconstruct the network without hardcoded class imports in serving scripts.
 
-2. **Enforce Collision Protection**:
+3. **Enforce Collision Protection**:
    `ModelRegistry.register_model()` rejects duplicate `(family, version)` pairs with `RegistryCollisionError`.
    Never overwrite versions silently; bump the semantic version (e.g., `1.0.0` -> `1.1.0`) unless explicitly permitted via `allow_override=True`.
 
-3. **Separate Checkpoints from Final Inference Bundles**:
-   - Training checkpoints: set `is_checkpoint=True`, pass `optimizer`, `scheduler`, and `scaler`. This serializes `train_state.pt` including random generator states across PyTorch, NumPy, and Python.
+4. **Separate Checkpoints from Final Inference Bundles**:
+   - Training checkpoints: set `is_checkpoint=True`, pass `optimizer`, `scheduler`, and `scaler`. This serializes `train_state.pt` including random generator states across PyTorch (CPU and CUDA), NumPy, and Python.
    - Inference bundles: set `is_checkpoint=False`. This eliminates optimizer weights and keeps artifacts lightweight.
 
-4. **Verify Dynamic Batch Dimensions in Contracts**:
+5. **Log Images and Evaluation Artifacts Directly**:
+   Use `run.log_image("name", tensor_or_array, step=step)` to persist validation samples, predictions, and feature maps.
+   Use `run.log_artifact("path/to/file")` to save confusion matrices, reports, or test evaluations.
+
+6. **Verify Dynamic Batch Dimensions in Contracts**:
    Always pass `sample_input` to `save_bundle()` or use `infer_schema(model, sample_input)`.
    Dimension 0 is automatically converted to dynamic batching (`None`).
 
-5. **Decouple Production Formats**:
+7. **Decouple Production Formats**:
    The `.bundle` archive is designed for internal development, training resumption, and contract verification.
    For deployment to Triton, TensorRT, or ONNX Runtime, use `export_onnx()` to create a standalone `.onnx` file outside the bundle.
+
+8. **Zero-Daemon Visual Inspection**:
+   When users want to inspect runs, metric curves, and artifacts, instruct them to run `mangosta view` (or invoke `start_viewer(".")`).
+   Never attempt to spin up heavy web servers or external daemons.
 
 ---
 
 ## Canonical Patterns
 
-### 1. Model Registration and Contract Definition
+### 1. Project Initialization
+
+Scaffold a complete, modular project layout with a single command:
+
+```bash
+mangosta init my_vision_project
+```
+
+Or programmatically in Python:
+
+```python
+from mangosta import init_project
+
+project_path = init_project("my_vision_project")
+```
+
+### 2. Model Registration and Contract Definition
 
 ```python
 import torch
@@ -76,7 +104,7 @@ class ImageClassifier(nn.Module):
         return self.head(self.encoder(x).flatten(1))
 ```
 
-### 2. Atomic Experiment Tracking
+### 3. Atomic Experiment Tracking with Artifact & Image Logging
 
 ```python
 from mangosta import quick_track
@@ -88,9 +116,15 @@ with quick_track(experiment="vision_models", run_name="exp_run_01") as run:
 
     for step, loss_value in enumerate(train_losses):
         run.log_metric("train_loss", loss_value, step=step)
+
+    # Log validation tensor (C, H, W or H, W, C) or existing file
+    run.log_image("val_prediction", val_image_tensor, step=10)
+
+    # Log training artifacts (confusion matrix, evaluation metrics JSON)
+    run.log_artifact("outputs/confusion_matrix.json")
 ```
 
-### 3. Checkpointing and Deterministic Resumption
+### 4. Checkpointing and Deterministic Resumption
 
 ```python
 from mangosta import save_bundle, resume_training, ModelRegistry
@@ -127,7 +161,7 @@ start_epoch = state.epoch + 1
 start_step = state.step
 ```
 
-### 4. Decoupled Inference with Contract Validation
+### 5. Decoupled Inference with Contract Validation
 
 ```python
 import torch
@@ -138,7 +172,15 @@ bundle = load_bundle("artifacts/model_final.bundle")
 predictions = bundle.predict(torch.randn(8, 3, 224, 224))
 ```
 
-### 5. Standalone ONNX Export with Dictionary Output Unrolling
+### 6. Zero-Daemon Local Viewer
+
+Navigate experiments, metrics curves, and saved artifacts in the browser:
+
+```bash
+mangosta view
+```
+
+### 7. Standalone ONNX Export with Dictionary Output Unrolling
 
 When a model outputs a dictionary of tensors (e.g. `{"mask": ..., "coords": ...}`), pass `output_mapping`:
 

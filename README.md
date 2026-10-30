@@ -278,8 +278,16 @@ cp skills/mangosta/SKILL.md .agents/skills/mangosta/SKILL.md
 ```
 
 Once installed, AI coding agents automatically discover the skill via its standard YAML frontmatter:
-- **Scope**: Automated model registration, contract validation, checkpoint recovery, and ONNX exports.
+- **Scope**: Automated project scaffolding (`mangosta init`), architecture registration, contract validation, checkpoint recovery, artifact & image logging, zero-daemon visual inspection (`mangosta view`), and ONNX exports.
 - **Location in repository**: [`skills/mangosta/SKILL.md`](file:///home/yeriel/Workspace/mangosta/skills/mangosta/SKILL.md)
+
+### Agent Prompting Examples
+
+With the skill installed, you can instruct your coding agent directly with natural language:
+- *"Scaffold a new PyTorch computer vision project using mangosta."* -> Agent runs `mangosta init` and configures Clean Architecture components.
+- *"Add checkpointing to our training loop with full RNG and optimizer recovery."* -> Agent implements `save_bundle(..., is_checkpoint=True)`.
+- *"Log validation predictions as images and launch the local viewer."* -> Agent integrates `run.log_image()` and guides you to run `mangosta view`.
+- *"Export our final trained bundle to ONNX with float16 precision."* -> Agent executes `mangosta export-onnx` or `export_onnx()`.
 
 ---
 
