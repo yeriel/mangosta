@@ -3,7 +3,6 @@
 > **Alcance:** Local Workstation / Single-GPU (PyTorch)  
 > **Objetivo:** Estabilidad, tolerancia a fallos, reproducibilidad matemática e inmutabilidad de API pública.  
 > **Estado:** Aprobado para Ejecución (Rama: `dev`)  
-> *(Nota: Archivo canónico disponible en `SPEC.md`)*
 
 ---
 

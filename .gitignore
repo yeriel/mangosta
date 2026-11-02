@@ -41,8 +41,6 @@ report.html
 # Local agent development & planning files
 .agents/
 tasks/
-SPEC.md
-SPEC-*.md
 
 # Screenshot & local media
 *.png
