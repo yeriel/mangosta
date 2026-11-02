@@ -1,231 +1,201 @@
 # MANGOSTA SPECIFICATION: RUTA HACIA LA VERSIÓN ESTABLE 1.0.0
-> **Documento:** Especificación Técnica y Plan de Hardening  
+> **Documento:** Especificación Técnica, Principios de Diseño y Plan de Hardening  
 > **Alcance:** Local Workstation / Single-GPU (PyTorch)  
-> **Objetivo:** Estabilidad, tolerancia a fallos, reproducibilidad matemática e inmutabilidad de API pública.  
+> **Filosofía:** Biblioteca pura (no framework invasivo), cero bases de datos, cero demonios, máxima ergonomía para el desarrollador en solitario.  
 > **Estado:** Aprobado para Ejecución (Rama: `dev`)  
 
 ---
 
 ## 1. Visión y Principios Rectores
 
-Mangosta es una biblioteca liviana para la gestión del ciclo de vida y MLOps local de modelos PyTorch, diseñada bajo una premisa fundamental: **cero demonios en segundo plano, cero dependencias de infraestructura en la nube y cero sobrecarga cognitiva**.
+Mangosta es una biblioteca liviana para la gestión del ciclo de vida y MLOps local de modelos PyTorch, diseñada bajo una premisa fundamental: **cero demonios en segundo plano, cero dependencias de infraestructura, cero bases de datos externas (sin SQLite, PostgreSQL ni RocksDB) y cero sobrecarga cognitiva**.
 
 Para alcanzar la versión estable (`1.0.0`), el mandato técnico es:
-1. **No agregar nuevas features:** Congelar el conjunto de funcionalidades existentes y no expandir el alcance hacia entrenamiento distribuido (DDP/multi-nodo) ni arquitecturas complejas de servidor.
-2. **Hardening sobre lo existente:** Blindar I/O en disco ante fallos inesperados (OOM, SIGINT, SIGKILL), garantizar serialización segura sin dependencias arbitrarias de código (reemplazando `pickle` por `safetensors`), y certificar la reproducibilidad bit-a-bit de checkpoints.
-3. **Ergonomía y claridad:** Mantener el andamiaje (`init`) limpio y sin carpetas vacías artificiales, asegurando compatibilidad nativa con flujos modernos basados en `uv`.
-4. **Congelamiento de API (SemVer):** Definir una frontera estricta entre API pública y submódulos internos, garantizando tipado estricto al 100%.
+1. **Biblioteca, no Framework Invasivo:** Mangosta provee herramientas atómicas (`save_bundle`, `RunTracker`, `load_bundle`, `inspect`), sin forzar al usuario a heredar de clases monolíticas ni encarcelar su código en una estructura rígida.
+2. **Cero Bases de Datos (Flat-Files Transparentes):** Toda persistencia se realiza en archivos planos auditables con herramientas estándar del sistema operativo (`cat`, `grep`, `unzip`, Python `json`, Pandas):
+   * Contenedores `.bundle` en formato ZIP estándar con `model.safetensors` y `manifest.json`.
+   * Métricas en streaming secuencial `metrics.jsonl`.
+   * Metadatos de corrida en `run.json`.
+3. **Hardening sobre lo existente:** Blindar I/O en disco ante fallos inesperados (OOM, SIGINT, SIGKILL), eliminar la dependencia de `pickle` mediante **SafeTensors**, optimizar el flushing de I/O para no frenar el entrenamiento y certificar la reproducibilidad matemática bit-a-bit de checkpoints.
+4. **Ergonomía Extrema para el Desarrollador en Solitario ("Smart Defaults"):** Convención sobre configuración. Las operaciones más frecuentes deben resolverse en una sola línea de código con valores por defecto inteligentes.
+5. **Congelamiento de API (SemVer):** Definir una frontera estricta entre API pública y submódulos internos, garantizando tipado estricto al 100%.
 
 ---
 
-## 2. Auditoría Técnica Senior de la Propuesta
+## 2. Análisis Senior: Libertad vs. Convención en la Industria ("El Camino Pavimentado")
 
-A continuación se presenta el análisis técnico de los puntos identificados en la propuesta inicial, contrastándolos con la realidad actual del código fuente:
+### 2.1. El Dilema: ¿Mucha libertad rompe el flujo de trabajo de Mangosta?
+En la ingeniería de MLOps moderna existen dos extremos fallidos:
+* **La Tiranía del Framework (ej. PyTorch Lightning rígido o Cookiecutters de 25 carpetas):** Obligan al usuario a estructurar cada clase en carpetas predefinidas (`models/architectures/baseline/v1/`). En iteraciones en solitario, esto genera fricción masiva y el desarrollador termina esquivando la herramienta.
+* **El Caos Irrestricto:** Si no hay guía, el usuario guarda checkpoints en cualquier carpeta, mezcla artefactos pesados en el repositorio de Git y sufre errores de importación (`ModuleNotFoundError` al ejecutar `uv run`).
 
-### 2.1. Scaffolding del Proyecto (`mangosta init`)
-* **Diagnóstico actual:** La implementación actual (`src/mangosta/cli/init_project.py`) crea de forma forzada carpetas vacías como `checkpoints/`, `experiments/` y `outputs/` con `.gitkeep`. Además, genera los ejecutables en la raíz (`train.py`, `infer.py`, `benchmark.py`) y **no genera un `pyproject.toml`** para el proyecto del usuario.
-* **Evaluación Senior:** 
-  * La adopción de **creación perezosa (lazy creation)** es obligatoria: ningún directorio de artefactos debe existir hasta que se invoque una rutina de guardado o tracking.
-  * Mover los scripts a `entrypoints/` (`entrypoints/train.py`, etc.) limpia la raíz.
-  * *Punto crítico de integración con `uv`:* Para que comandos como `uv run train` funcionen mediante `[project.scripts]`, el `pyproject.toml` generado debe declarar el paquete editable o incluir `entrypoints` en el empaquetado del build-backend (ej. hatchling). De lo contrario, `uv` arrojará `ModuleNotFoundError`. El `init` debe generar un `pyproject.toml` autocontenido y válido.
+### 2.2. La Solución Estándar de la Industria: "Camino Pavimentado" (Paved Road) con Contratos en las Fronteras
+La industria (Hugging Face `accelerate`, FastAPI, Vite, Rust `cargo`) resuelve este dilema separando dos niveles de responsabilidad:
 
-### 2.2. Robustez de I/O y Fallos de Proceso
-* **Diagnóstico actual:**
-  * `save_bundle` utiliza escritura temporal y `os.replace`, lo cual previene archivos `.bundle` a medio escribir. Sin embargo, no hay limpieza de archivos `.tmp` huérfanos si el proceso muere durante el empaquetado.
-  * `RunTracker.log_metric()` ejecuta `with open(..., "a")`, `flush()` y `os.fsync()` en **cada llamada**.
-* **Evaluación Senior:**
-  * En un bucle de entrenamiento estándar de PyTorch (ej. 100-500 iteraciones por segundo), forzar un `fsync` en cada batch satura la cola de I/O del kernel y degrada el rendimiento de entrenamiento entre un 20% y 50% en discos locales o NVMe.
-  * *Solución requerida:* Implementar flushing por micro-lotes o por intervalos de tiempo/pasos (ej. cada $N$ pasos o por época), manteniendo un `flush` inmediato y dejando el `fsync` estricto para eventos de epoch, guardado de checkpoint o finalización del contexto (`__exit__`).
-  * *Manejo de señales:* Si el entrenamiento recibe `SIGTERM` o `SIGINT` (Ctrl+C), el tracker debe registrar el estado `"interrupted"` o `"failed"` de forma determinista para que la corrida no quede perpetuamente como `"running"` en `run.json`.
-
-### 2.3. Formato de Bundle y Serialización Segura (SafeTensors)
-* **Diagnóstico actual:** `save_bundle` serializa los pesos con `torch.save(model.state_dict(), weights_buffer)` dentro de un archivo `.zip` como `weights.pt`.
-* **Evaluación Senior:**
-  * `torch.save` depende de `pickle`, lo que representa un vector de vulnerabilidad ante inyección de código arbitrario y genera acoplamiento indeseado con clases de Python al momento de inspeccionar artefactos.
-  * Migrar los pesos a formato **SafeTensors** (`model.safetensors`) es el estándar moderno de la industria: es inmune a ejecución de código, rápido y tipado.
-  * *Detalle de arquitectura:* Dado que SafeTensors dentro de un ZIP no puede aprovechar memoria mapeada (`mmap`) con zero-copy si está comprimido, el empaquetado del bundle debe guardar `model.safetensors` usando compresión nula (`zipfile.ZIP_STORED`) o cargar los bytes directamente mediante `safetensors.torch.load(bytes)`.
-  * La información de optimizador y estado de entrenamiento (`train_state.pt`) continuará aislada y solo se requerirá cuando `is_checkpoint=True`.
-  * En el `manifest.json` se debe registrar el hash criptográfico SHA-256 de los pesos para validar la integridad del bundle antes de cargarlo a memoria.
-
-### 2.4. Suite de Determinismo Bit-a-Bit en CI
-* **Diagnóstico actual:** Existen pruebas de snapshot y restauración de RNG, pero no un test de integración extremo que certifique paridad matemática absoluta entre una corrida continua y una corrida interrumpida y reanudada.
-* **Evaluación Senior:**
-  * Para que la suite corra de forma confiable en GitHub Actions (CPU) sin requerir GPUs costosas:
-    * El test de determinismo debe ejecutarse sobre CPU configurando explícitamente `torch.use_deterministic_algorithms(True)` si aplica.
-    * Debe verificarse que tras 10 épocas continuas vs (5 épocas + `save_bundle` + reinicio de modelo/optimizador/RNG + `resume_training` + 5 épocas), se cumpla:
-      $$\text{Loss}_{\text{continua}} == \text{Loss}_{\text{reanudada}} \quad (\text{atol} = 0.0 \text{ o error de coma flotante } \le 10^{-7})$$
-      $$\text{weights}_{\text{continua}} == \text{weights}_{\text{reanudada}} \quad (\text{torch.allclose})$$
-    * El test debe cubrir la semilla de Python `random`, `numpy`, PyTorch CPU y PyTorch CUDA (cuando esté disponible).
-
-### 2.5. Superficie de API Pública (SemVer 1.0.0)
-* **Diagnóstico actual:** La API expuesta en `src/mangosta/__init__.py` ya es relativamente compacta, pero no existe una clara separación física entre utilidades de soporte interno y componentes de usuario.
-* **Evaluación Senior:**
-  * Se deben congelar los contratos públicos. Todo módulo auxiliar que no sea parte de la interfaz oficial debe residir en `mangosta._internal` o llevar prefijo privado `_`.
-  * Pasar `ruff check` sin advertencias y validar cobertura de tipos estricta (`mypy --strict`).
+1. **El código fuente es libre:** A Mangosta no le importa si tu modelo vive en `src/models.py`, en `model.py` en la raíz o dentro de un notebook interactivo. Solo exige que sea una instancia de `torch.nn.Module`.
+2. **Las salidas y artefactos son estrictos (Contratos en las Fronteras):**
+   * Los checkpoints se guardan como archivos inmutables `.bundle`.
+   * Los experimentos se estructuran en `experiments/<experimento>/<corrida>/`.
+   * Las herramientas de inspección y visualización (`mangosta inspect`, `mangosta view`, `mangosta report`) operan sobre estas convenciones.
+3. **Barandillas de Seguridad (Guardrails) en el Scaffolding:**
+   * La plantilla generada por `mangosta init` no es una camisa de fuerza, sino un **camino pavimentado** funcional desde el segundo cero:
+     * Genera un `pyproject.toml` válido que permite ejecutar `uv run train` sin importar desde dónde invoques la terminal.
+     * Genera un `.gitignore` robusto que evita subir accidentalmente modelos pesados a Git.
+     * Utiliza **creación perezosa (lazy creation)**: si el usuario no necesita guardar salidas de prueba, no verá carpetas vacías estorbando en su explorador de archivos.
 
 ---
 
-## 3. Especificación Técnica de los Componentes
+## 3. Las 5 Simplificaciones de Ergonomía (DX) para Iteración Rápida
 
-### Especificación A: Scaffolding Robusto y Minimalista (`mangosta init`)
-La estructura generada por `mangosta init [nombre-proyecto]` debe ser:
+### 3.1. "Smart Defaults" en `save_bundle`
+Eliminar la obligación de pasar argumentos redundantes en prototipado rápido:
+* Si `family` no se especifica, se auto-infiere: `model.__class__.__name__.lower()`.
+* Si `version` no se especifica, por defecto es `"0.1.0"`.
+* Si se proporciona `optimizer`, `scheduler` o `scaler`, **se infiere automáticamente `is_checkpoint = True`**.
+* Si se proporciona `sample_input`, se infiere el contrato `schema` sin configuración extra.
+* *Resultado:* Guardar un checkpoint pasa de 8 líneas a **1 línea**:
+  ```python
+  save_bundle("checkpoints/best.bundle", model, optimizer=optimizer, epoch=epoch)
+  ```
 
+### 3.2. Registro en Lote con `log_metrics(dict)` en `RunTracker`
+* Permitir registrar múltiples métricas en un único paso:
+  ```python
+  run.log_metrics({"loss": loss.item(), "acc": acc, "lr": current_lr}, step=epoch)
+  ```
+* Evita bucles manuales de `log_metric`, minimiza escrituras y reduce la fricción en el bucle de entrenamiento.
+
+### 3.3. Scaffolding Minimalista y Limpio (`mangosta init`)
+Estructura reducida a lo esencial:
 ```text
 mi-proyecto/
 ├── configs/
-│   ├── base.yaml
-│   └── experiments/
-│       └── exp_baseline.yaml
+│   └── exp_baseline.yaml
 ├── entrypoints/
 │   ├── __init__.py
 │   ├── train.py
-│   ├── infer.py
-│   └── benchmark.py
+│   └── infer.py
 ├── src/
 │   ├── __init__.py
-│   ├── data/
-│   │   ├── __init__.py
-│   │   └── loader.py
-│   ├── models/
-│   │   ├── __init__.py
-│   │   └── architectures/
-│   │       ├── __init__.py
-│   │       └── baseline.py
-│   └── utils/
-│       ├── __init__.py
-│       └── config.py
+│   └── models.py
 ├── .gitignore
 ├── pyproject.toml
 └── README.md
 ```
+* **Cero directorios vacíos:** `checkpoints/` y `experiments/` se crean automáticamente en disco cuando el código realmente ejecuta un guardado.
+* **Integración nativa con `uv`:** `pyproject.toml` preconfigura `[project.scripts]` para permitir `uv run train` y `uv run infer`.
 
-#### Reglas de Scaffolding:
-1. **Cero directorios vacíos:** No crear `checkpoints/`, `experiments/` ni `outputs/`. Se generarán perezosamente en tiempo de ejecución.
-2. **`pyproject.toml` preconfigurado:** Incluir definición de proyecto con `dependencies = ["mangosta", "torch", "pyyaml"]` y la sección:
-   ```toml
-   [project.scripts]
-   train = "entrypoints.train:main"
-   infer = "entrypoints.infer:main"
-   benchmark = "entrypoints.benchmark:main"
-   ```
-3. **Resolución de módulos limpia:** `entrypoints/` incluirá `__init__.py` y cada script configurará la resolución adecuada para que funcione indistintamente como `uv run train`, `uv run python -m entrypoints.train` o `python entrypoints/train.py`.
+### 3.4. Carga Flexible y Didáctica en `load_bundle`
+* Soporte transparente tanto para flujos desacoplados con registro como para flujos directos:
+  ```python
+  # Modo A (Vía registro automático):
+  bundle = load_bundle("checkpoints/best.bundle")
+
+  # Modo B (Directo, pasando la arquitectura):
+  bundle = load_bundle("checkpoints/best.bundle", model=MyModel())
+  ```
+* Si el modelo no está registrado y no se proporcionó `model`, el error debe orientar al desarrollador en la terminal con una solución inmediata en lugar de un stack trace críptico.
+
+### 3.5. Transparencia Absoluta de Artefactos (Cero Cajas Negras)
+* Un `.bundle` es un ZIP estándar sin compresión en tensores (`ZIP_STORED`), lo que permite abrirlo con cualquier herramienta del sistema o inspeccionarlo en milisegundos con `mangosta inspect <bundle>`.
+* No hay bases de datos intermedias: los datos son archivos planos que sobreviven a caídas y no sufren de bloqueos de concurrencia (`database is locked`).
 
 ---
 
-### Especificación B: Formato de Bundle Seguro y Tolerante a Fallos
+## 4. Especificación Técnica de Componentes
 
-El archivo `.bundle` es un contenedor ZIP inmutable con la siguiente estructura interna:
-
+### 4.1. Bundle y Serialización Segura (SafeTensors)
+Contenido del contenedor `.bundle`:
 ```text
 modelo.bundle (ZIP)
-├── manifest.json       # Esquema tipado, hashes, metadatos y contrato I/O
-├── config.yaml         # Copia inmutable de la configuración de entrenamiento
-├── model.safetensors   # Pesos de PyTorch en formato SafeTensors (cero pickle)
-└── train_state.pt      # Estado de optimizador, scheduler y RNG (solo en checkpoints)
+├── manifest.json       # JSON: Metadatos, contrato I/O, hash SHA-256 de los pesos
+├── config.yaml         # YAML: Copia inmutable de la configuración
+├── model.safetensors   # SafeTensors: Pesos de PyTorch (cero riesgo de pickle)
+└── train_state.pt      # PyTorch binary: Optimizador, LR scheduler y RNG (solo en checkpoints)
 ```
 
 #### Protocolo de Escritura Atómica en Dos Fases:
-1. Crear el archivo temporal en el mismo sistema de archivos: `{dest_name}.tmp_{pid}_{uuid4}`.
-2. Escribir `manifest.json`, `config.yaml`, `model.safetensors` (usando `safetensors.torch.save`) y opcionalmente `train_state.pt`.
-3. Validar integridad de escritura mediante cálculo del hash SHA-256 de los pesos dentro del manifiesto.
-4. Aplicar `os.replace(tmp_dest, final_dest)`. Si ocurre una excepción previa, limpiar el archivo temporal en bloque `finally`.
+1. Crear archivo temporal `{dest_name}.tmp_{pid}_{uuid4}` en el mismo sistema de archivos.
+2. Escribir manifiesto, pesos en formato SafeTensors y estado de entrenamiento.
+3. Registrar hash criptográfico SHA-256 de `model.safetensors` en `manifest.json`.
+4. Ejecutar `os.replace(tmp_dest, dest)`. Si ocurre cualquier excepción en el proceso, limpiar el archivo temporal en bloque `finally`.
 
-#### Carga Desacoplada e Inspección:
-* `mangosta inspect <bundle>` debe leer **únicamente** `manifest.json` y el encabezado de `model.safetensors` sin instanciar la clase de PyTorch ni ejecutar código en Python.
-* `load_bundle()` verificará el hash de los pesos contra el manifiesto antes de reconstruir el grafo en memoria.
+### 4.2. Tracking Crash-Resilient sin Cuello de Botella de I/O
+* **Métricas:** Escritura en streaming a `metrics.jsonl`. `flush()` inmediato para vaciar buffers de Python, y `os.fsync()` desvinculado del batch individual: se sincroniza a disco por épocas, al cerrar el tracker (`finish()`) o cada $K$ pasos configurables ($K=50$ por defecto).
+* **Manejo de Señales:** Capturar `SIGINT` (Ctrl+C) y `SIGTERM` para sincronizar `run.json` marcando el estado `"interrupted"` o `"failed"` de forma ordenada, evitando corridas zombis.
+* **Colisión de Nombres:** Añadir un identificador aleatorio corto al nombre automático de la corrida (`run_{timestamp}_{hex}`) para evitar colisiones si se inician dos procesos concurrentes.
 
----
-
-### Especificación C: Tracking Crash-Resilient sin Cuellos de Botella de I/O
-
-El componente `RunTracker`:
-1. **Estrategia de escritura de métricas:**
-   * Las líneas en `metrics.jsonl` se escriben de manera secuencial en formato JSON-Lines.
-   * `flush()` inmediato en cada iteración para garantizar que no queden datos en los buffers de Python.
-   * `os.fsync()` configurable: ejecutado en cada época, al invocar `finish()`, o cada $K$ pasos (por defecto $K=50$ en pasos intra-época), evitando degradar el rendimiento del bucle de entrenamiento.
-2. **Manejo de terminación de proceso:**
-   * Implementación de manejadores seguros para `SIGINT` y `SIGTERM` que finalicen la corrida actual con estado `"interrupted"` y sincronicen el archivo `run.json`.
-3. **Aislamiento de identificador de corrida:**
-   * Incluir un sufijo aleatorio corto o PID en el nombre automático de la corrida si no se especifica uno, previniendo colisiones de directorios en ejecuciones concurrentes en la misma máquina.
+### 4.3. Determinismo y Validación de Contratos
+* **Invariancia Bit-a-Bit:** Garantizar que retomar un checkpoint guardado con `is_checkpoint=True` produzca exactamente la misma pérdida y pesos que una corrida continua bajo las mismas condiciones.
+* **Contratos pre-CUDA:** `LoadedBundle.predict(sample, validate=True)` comprueba formas y tipos antes de invocar la GPU para evitar fallos opacos en CUDA.
 
 ---
 
-### Especificación D: Validación de Contratos y Determinismo
-
-1. **Invariancia Bit-a-Bit de Checkpoints:**
-   * La biblioteca proveerá garantías matemáticas: retomar un checkpoint guardado con `is_checkpoint=True` debe continuar el camino de optimización exactamente idéntico al de una ejecución sin interrupciones bajo el mismo seed.
-   * Cobertura de generadores RNG: Python (`random`), NumPy (`np.random`), PyTorch CPU (`torch.random`), PyTorch CUDA (`torch.cuda.random`) si está disponible.
-2. **Contrato de Inferencia Previa al Grafo:**
-   * `LoadedBundle.predict(sample, validate=True)` debe interceptar errores de dimensión, canal o tipo de dato (`dtype`) antes de transferir datos al dispositivo o invocar CUDA, emitiendo excepciones claras (`SchemaValidationError`).
-
----
-
-## 4. Hoja de Ruta Faseada (Roadmap hacia v1.0.0)
+## 5. Hoja de Ruta Faseada (Roadmap hacia v1.0.0)
 
 ```
 [ v0.2.x (Alpha) ]
        │
        ▼
-[ Fase 1: Scaffolding & DX ]  ────────► Limpieza de `init`, lazy folders, pyproject.toml en plantillas.
+[ Fase 1: Scaffolding, DX & Smart Defaults ] ──► Limpieza de `init`, lazy folders, pyproject.toml, smart defaults en save_bundle/log_metrics.
        │
        ▼
-[ Fase 2: I/O Hardening & SafeTensors ] ► SafeTensors en bundles, hashing SHA-256, atomic rename blindado, buffer I/O.
+[ Fase 2: I/O Hardening & SafeTensors ] ───────► SafeTensors, hashing SHA-256, atomic rename blindado, buffer I/O sin stalls.
        │
        ▼
-[ Fase 3: Suite de Determinismo & CI ] ──► Tests de invariancia bit-a-bit, simulación de fallos/SIGINT, validación de schema.
+[ Fase 3: Suite de Determinismo & CI ] ────────► Tests bit-a-bit, simulación de fallos/SIGINT, validación de schema pre-CUDA.
        │
        ▼
-[ Fase 4: Congelamiento de API & SemVer ]► Tipado estricto mypy, delimitación _internal, CLI inspect optimizada.
+[ Fase 4: Congelamiento de API & SemVer ]──────► Tipado estricto mypy, delimitación _internal, CLI inspect con --json.
        │
        ▼
 [ v1.0.0 (Release Estable) ]
 ```
 
-### Fase 1: Scaffolding y Limpieza de Deuda Técnica (Objetivo: v0.3.0)
+### Fase 1: Scaffolding, DX y Smart Defaults (Objetivo: v0.3.0)
 - [ ] Refactorizar `src/mangosta/cli/init_project.py`:
-  - [ ] Eliminar la creación anticipada de `checkpoints/`, `experiments/`, `outputs/` y sus `.gitkeep`.
-  - [ ] Reestructurar scripts hacia la carpeta `entrypoints/` (`train.py`, `infer.py`, `benchmark.py`).
-  - [ ] Generar un `pyproject.toml` válido para el proyecto inicializado con `[project.scripts]`.
-  - [ ] Actualizar `.gitignore` y `README.md` generados.
-- [ ] Adaptar y ampliar tests unitarios en `tests/test_init.py` y `tests/test_cli.py`.
+  - [ ] Eliminar creación anticipada de carpetas vacías (`checkpoints/`, `experiments/`, `outputs/`) y sus `.gitkeep`.
+  - [ ] Consolidar la plantilla minimalista: `configs/exp_baseline.yaml`, `src/models.py`, `entrypoints/train.py`, `entrypoints/infer.py`.
+  - [ ] Generar `pyproject.toml` con `[project.scripts]` para `uv run train` y `uv run infer`.
+  - [ ] Actualizar `.gitignore` y `README.md`.
+- [ ] Implementar Smart Defaults en `src/mangosta/artifacts/bundle.py`:
+  - [ ] Inferencia de `family` a partir de `model.__class__.__name__.lower()`.
+  - [ ] Inferencia automática de `is_checkpoint=True` si se suministra `optimizer`, `scheduler` o `scaler`.
+- [ ] Implementar `log_metrics(dict)` en `src/mangosta/tracking/tracker.py`.
+- [ ] Mejorar mensajes de diagnóstico en `load_bundle` de `src/mangosta/artifacts/loader.py`.
+- [ ] Actualizar y pasar suite de tests de scaffolding (`tests/test_init.py`).
 
 ### Fase 2: I/O Seguro, SafeTensors y Persistencia Resiliente (Objetivo: v0.4.0)
-- [ ] Agregar dependencia `safetensors>=0.4.0` a `pyproject.toml`.
-- [ ] Refactorizar `src/mangosta/artifacts/bundle.py`:
-  - [ ] Reemplazar `weights.pt` por `model.safetensors` utilizando la serialización de `safetensors.torch`.
-  - [ ] Incorporar cálculo y verificación de SHA-256 de los pesos en `manifest.json`.
-  - [ ] Blindar la rutina de creación atómica con captura de excepciones y eliminación de archivos `.tmp` huérfanos.
-- [ ] Refactorizar `src/mangosta/artifacts/loader.py`:
-  - [ ] Cargar pesos desde `model.safetensors` validando previamente la firma contra el manifiesto.
-  - [ ] Mantener compatibilidad de lectura hacia atrás para bundles legacy con `weights.pt` con aviso de depreciación.
-- [ ] Refactorizar `src/mangosta/tracking/tracker.py`:
-  - [ ] Optimizar la frecuencia de `fsync` para evitar bloqueos en bucles rápidos de entrenamiento.
-  - [ ] Captura de señales de interrupción (`SIGINT`/`SIGTERM`) para cierre ordenado del estado de corrida.
+- [ ] Añadir `safetensors>=0.4.0` a dependencias en `pyproject.toml`.
+- [ ] Migrar almacenamiento de pesos en `save_bundle` a `model.safetensors`.
+- [ ] Incorporar cálculo y verificación de SHA-256 de pesos en `manifest.json`.
+- [ ] Blindar escritura atómica con limpieza estricta de `.tmp` en bloques `finally`.
+- [ ] Actualizar `load_bundle` y `resume_training` para leer `model.safetensors` (manteniendo retrocompatibilidad con `weights.pt`).
+- [ ] Desacoplar `fsync` continuo en `RunTracker.log_metric` / `log_metrics` para evitar stalls de I/O.
+- [ ] Implementar manejadores de señales `SIGINT`/`SIGTERM` en `RunTracker`.
 
 ### Fase 3: Suite de Determinismo y Verificación en CI (Objetivo: v0.5.0-beta)
 - [ ] Implementar `tests/test_determinism.py`:
-  - [ ] Test de invariancia bit-a-bit (corrida continua de 10 épocas vs 5 épocas + guardado + interrupción + carga + 5 épocas restantes).
-  - [ ] Verificación de pérdida idéntica (`loss == loss`) y pesos con `torch.allclose(..., atol=0.0)`.
+  - [ ] Test bit-a-bit en CPU: 10 épocas continuas vs (5 épocas + checkpoint + reanudación + 5 épocas).
+  - [ ] Verificación de pérdida idéntica (`loss == loss`) y pesos (`torch.allclose(atol=0.0)`).
 - [ ] Implementar `tests/test_fault_tolerance.py`:
-  - [ ] Simulación de interrupción abrupta de I/O y comprobación de no corrupción de checkpoints previos.
-  - [ ] Validación de captura de excepciones en contratos de inferencia errónea (dimensiones cruzadas, tipos de datos inválidos).
+  - [ ] Simulación de proceso interrumpido durante escritura de bundle y verificación de ausencia de archivos corruptos.
+  - [ ] Test de detección y reporte de bundles con pesos alterados o hashes inválidos.
 
 ### Fase 4: Congelamiento de API, Tipado y Release Estable (Objetivo: v1.0.0)
-- [ ] Enriquecer `mangosta inspect <bundle>` en `src/mangosta/cli/main.py`:
-  - [ ] Inspección segura de tensores y metadatos vía SafeTensors sin instanciar modelos en PyTorch.
-  - [ ] Soporte para salida en formato `--json` para scripts de automatización.
-- [ ] Definir fronteras de API pública estricta en `src/mangosta/__init__.py`.
-- [ ] Mypy / Pyright: tipado estricto en el 100% de la superficie pública sin `type: ignore` injustificados.
-- [ ] Cobertura de pruebas unitarias y de integración > 85%.
-- [ ] Documentación de API y guía de migración para v1.0.0.
+- [ ] Actualizar `mangosta inspect <bundle>` en `src/mangosta/cli/main.py`:
+  - [ ] Lectura segura de encabezados SafeTensors sin instanciar PyTorch.
+  - [ ] Soporte para flag `--json`.
+- [ ] Congelar la superficie de API pública en `src/mangosta/__init__.py`.
+- [ ] Verificación de tipado estricto con `mypy --strict` en la API pública.
+- [ ] Cobertura de tests $> 85\%$.
 
 ---
 
-## 5. Definición de "Hecho" (Definition of Done para v1.0.0)
+## 6. Definición de "Hecho" (Definition of Done para v1.0.0)
 
-Para declarar formalmente la versión `1.0.0`, el proyecto debe satisfacer todos los siguientes criterios:
-1. **Cero regresiones ni fallos de persistencia:** Todos los tests de la suite (`pytest`) pasan con éxito.
-2. **Determinismo validado:** El test de invariancia bit-a-bit se ejecuta y aprueba en cada ejecución de CI.
-3. **Seguridad de artefactos:** Los bundles generados no ejecutan `pickle` para los pesos del modelo.
-4. **Scaffolding limpio:** `mangosta init` no genera carpetas vacías ni archivos huérfanos.
-5. **Tipado y Calidad de Código:** `ruff check` y validación de tipos sin advertencias.
+1. **Cero bases de datos:** Toda persistencia reside en archivos planos transparentes y auditables (ZIP, SafeTensors, JSONL, JSON).
+2. **Cero carpetas vacías:** El scaffolding genera únicamente archivos vivos; los directorios de artefactos se crean de forma perezosa.
+3. **Flujo de desarrollo en 1 línea:** Guardar checkpoints y registrar métricas no exige boilerplate innecesario.
+4. **Determinismo comprobado:** La prueba de invariancia bit-a-bit pasa de forma reproducible en CI.
+5. **Seguridad y compatibilidad:** Pesos en SafeTensors, eliminación de vulnerabilidades de `pickle` en distribución de bundles e integridad validada con SHA-256.
