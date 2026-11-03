@@ -191,3 +191,39 @@ def test_run_tracker_sync_interval_validation_and_zero(tmp_path: Path) -> None:
     tracker.finish()
 
 
+def test_run_tracker_keyboard_interrupt_marks_interrupted(tmp_path: Path) -> None:
+    exp_dir = tmp_path / "experiments"
+
+    with pytest.raises(KeyboardInterrupt):
+        with RunTracker(experiment="test_int", run_name="run_ctrl_c", root_dir=exp_dir) as tracker:
+            tracker.log_metrics({"loss": 0.5}, step=0)
+            raise KeyboardInterrupt()
+
+    assert tracker.status == "interrupted"
+    meta = json.loads((tracker.run_dir / "run.json").read_text())
+    assert meta["status"] == "interrupted"
+
+
+def test_run_tracker_signal_handlers_sigint_and_sigterm(tmp_path: Path) -> None:
+    import signal
+    from unittest.mock import patch
+
+    exp_dir = tmp_path / "experiments"
+    tracker = RunTracker(experiment="test_sig", run_name="run_sig", root_dir=exp_dir)
+
+    with tracker:
+        # 1. SIGINT raises KeyboardInterrupt and marks interrupted
+        with pytest.raises(KeyboardInterrupt):
+            tracker._handle_signal(signal.SIGINT, None)
+        assert tracker.status == "interrupted"
+
+    # 2. SIGTERM exits with code 128 + SIGTERM and marks interrupted
+    tracker2 = RunTracker(experiment="test_sig", run_name="run_sigterm", root_dir=exp_dir)
+    with tracker2:
+        with patch("sys.exit") as mock_exit:
+            tracker2._handle_signal(signal.SIGTERM, None)
+            mock_exit.assert_called_once_with(128 + signal.SIGTERM)
+        assert tracker2.status == "interrupted"
+
+
+

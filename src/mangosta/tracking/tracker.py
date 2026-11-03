@@ -6,7 +6,10 @@ import hashlib
 import json
 import os
 import platform
+import signal
 import subprocess
+import sys
+import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -99,6 +102,7 @@ class RunTracker:
 
         self._metrics_cache: dict[str, list[dict[str, Any]]] = {}
         self._step_counter = 0
+        self._orig_signals: dict[int, Any] = {}
 
         self._save_metadata()
 
@@ -342,10 +346,41 @@ class RunTracker:
 
     def finish(self, status: str = "completed") -> None:
         """Finalize the run, commit data to physical disk, and mark status in run.json."""
+        self._restore_signal_handlers()
         self.status = status
         self.end_time = datetime.now(timezone.utc).isoformat()
         self.flush_disk()
         self._save_metadata()
+
+    def _install_signal_handlers(self) -> None:
+        """Install graceful exit signal handlers on the main thread."""
+        if threading.current_thread() is not threading.main_thread():
+            return
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                self._orig_signals[sig] = signal.getsignal(sig)
+                signal.signal(sig, self._handle_signal)
+            except (ValueError, OSError):
+                pass
+
+    def _restore_signal_handlers(self) -> None:
+        """Restore previous signal handlers."""
+        if threading.current_thread() is not threading.main_thread():
+            return
+        for sig, handler in list(self._orig_signals.items()):
+            try:
+                signal.signal(sig, handler)
+            except (ValueError, OSError):
+                pass
+        self._orig_signals.clear()
+
+    def _handle_signal(self, signum: int, frame: Any) -> None:
+        """Handle termination signal by flushing state, saving status, and exiting."""
+        self.finish(status="interrupted")
+        self._restore_signal_handlers()
+        if signum == signal.SIGINT:
+            raise KeyboardInterrupt()
+        sys.exit(128 + signum)
 
     def _save_metadata(self) -> None:
         """Atomically write run metadata to run.json via tmp file and os.replace."""
@@ -378,6 +413,7 @@ class RunTracker:
         os.replace(tmp_file, self.metadata_file)
 
     def __enter__(self) -> RunTracker:
+        self._install_signal_handlers()
         return self
 
     def __exit__(
@@ -386,7 +422,13 @@ class RunTracker:
         exc_val: BaseException | None,
         exc_tb: Any,
     ) -> None:
-        status = "failed" if exc_type is not None else "completed"
+        self._restore_signal_handlers()
+        if self.status == "interrupted":
+            return
+        if exc_type is not None:
+            status = "interrupted" if issubclass(exc_type, KeyboardInterrupt) else "failed"
+        else:
+            status = "completed"
         self.finish(status=status)
 
 
@@ -410,10 +452,5 @@ def quick_track(
         root_dir=root_dir,
         sync_interval=sync_interval,
     )
-    try:
+    with tracker:
         yield tracker
-    except Exception:
-        tracker.finish(status="failed")
-        raise
-    else:
-        tracker.finish(status="completed")
