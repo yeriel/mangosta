@@ -72,7 +72,11 @@ class RunTracker:
         experiment: str = "default",
         run_name: str | None = None,
         root_dir: str | Path = "experiments",
+        sync_interval: int = 10,
     ) -> None:
+        if sync_interval < 0:
+            raise ValueError(f"sync_interval must be non-negative, got {sync_interval}")
+        self.sync_interval = sync_interval
         self.experiment = experiment.strip().replace(" ", "_")
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         self.run_name = run_name.strip().replace(" ", "_") if run_name else f"run_{timestamp}"
@@ -147,7 +151,8 @@ class RunTracker:
         with open(self.metrics_file, "a", encoding="utf-8") as f:
             f.writelines(lines)
             f.flush()
-            os.fsync(f.fileno())
+            if self.sync_interval > 0 and (int(step) % self.sync_interval == 0):
+                os.fsync(f.fileno())
 
     def log_artifact(self, source_path: str | Path, name: str | None = None) -> Path:
         """Atomically copy a file to the run's artifacts directory and record in run.json."""
@@ -328,10 +333,18 @@ class RunTracker:
                         self._metrics_cache[name].append(rec)
         return self._metrics_cache
 
+    def flush_disk(self) -> None:
+        """Force flushing pending metric data from OS page cache down to physical storage."""
+        if self.metrics_file.exists():
+            with open(self.metrics_file, "a", encoding="utf-8") as f:
+                f.flush()
+                os.fsync(f.fileno())
+
     def finish(self, status: str = "completed") -> None:
-        """Finalize the run and mark status in run.json."""
+        """Finalize the run, commit data to physical disk, and mark status in run.json."""
         self.status = status
         self.end_time = datetime.now(timezone.utc).isoformat()
+        self.flush_disk()
         self._save_metadata()
 
     def _save_metadata(self) -> None:
@@ -382,6 +395,7 @@ def quick_track(
     run_name: str | None = None,
     experiment: str = "default",
     root_dir: str | Path = "experiments",
+    sync_interval: int = 10,
 ) -> Iterator[RunTracker]:
     """Lightweight 3-line context manager for quick experiment tracking.
 
@@ -390,7 +404,12 @@ def quick_track(
             run.log_params({"lr": 0.001, "batch_size": 32})
             run.log_metrics({"loss": 0.42}, step=0)
     """
-    tracker = RunTracker(experiment=experiment, run_name=run_name, root_dir=root_dir)
+    tracker = RunTracker(
+        experiment=experiment,
+        run_name=run_name,
+        root_dir=root_dir,
+        sync_interval=sync_interval,
+    )
     try:
         yield tracker
     except Exception:

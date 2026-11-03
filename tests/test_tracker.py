@@ -131,3 +131,63 @@ def test_run_tracker_log_metrics_batch(tmp_path: Path) -> None:
 
     tracker.finish()
 
+
+def test_run_tracker_sync_interval_and_flush_disk(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    exp_dir = tmp_path / "experiments"
+    tracker = RunTracker(
+        experiment="sync_exp",
+        run_name="run_sync",
+        root_dir=exp_dir,
+        sync_interval=10,
+    )
+
+    with patch("os.fsync") as mock_fsync:
+        # Step 0 -> 0 % 10 == 0 -> should fsync
+        tracker.log_metrics({"loss": 0.9}, step=0)
+        assert mock_fsync.call_count == 1
+
+        # Steps 1 to 9 -> should NOT fsync
+        for s in range(1, 10):
+            tracker.log_metrics({"loss": 0.9 - s * 0.05}, step=s)
+        assert mock_fsync.call_count == 1
+
+        # Step 10 -> 10 % 10 == 0 -> should fsync
+        tracker.log_metrics({"loss": 0.4}, step=10)
+        assert mock_fsync.call_count == 2
+
+        # Step 11 -> no fsync
+        tracker.log_metrics({"loss": 0.39}, step=11)
+        assert mock_fsync.call_count == 2
+
+        # Explicit manual flush_disk -> should fsync
+        tracker.flush_disk()
+        assert mock_fsync.call_count == 3
+
+    # On finish(), flush_disk is automatically invoked
+    with patch("os.fsync") as mock_fsync:
+        tracker.finish()
+        # mock_fsync called at least once by flush_disk, plus once by _save_metadata
+        assert mock_fsync.call_count >= 1
+
+
+def test_run_tracker_sync_interval_validation_and_zero(tmp_path: Path) -> None:
+    from unittest.mock import patch
+
+    exp_dir = tmp_path / "experiments"
+
+    # Negative sync_interval raises ValueError
+    with pytest.raises(ValueError, match="sync_interval must be non-negative"):
+        RunTracker(root_dir=exp_dir, sync_interval=-1)
+
+    # sync_interval=0 disables periodic fsync entirely (pure userspace flush)
+    tracker = RunTracker(root_dir=exp_dir, sync_interval=0)
+    with patch("os.fsync") as mock_fsync:
+        for s in range(25):
+            tracker.log_metrics({"loss": 0.5}, step=s)
+        assert mock_fsync.call_count == 0
+
+    tracker.finish()
+
+
