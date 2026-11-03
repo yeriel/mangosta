@@ -16,7 +16,7 @@ import yaml
 from mangosta.artifacts.bundle import _restore_rng_states
 from mangosta.core.registry import ModelRegistry
 from mangosta.core.schema import ModelSchema
-from mangosta.exceptions import BundleCorruptedError, ResumeStateError
+from mangosta.exceptions import BundleCorruptedError, ModelNotFoundError, ResumeStateError
 
 
 @dataclass
@@ -120,7 +120,15 @@ def load_bundle(
                 init_args = manifest.get("init_args", {})
                 if not family:
                     raise BundleCorruptedError("Manifest is missing 'family' field.")
-                model = ModelRegistry.build(family, version=version, **init_args)
+                try:
+                    model = ModelRegistry.build(family, version=version, **init_args)
+                except ModelNotFoundError as e:
+                    raise ModelNotFoundError(
+                        f"Failed to auto-reconstruct model from bundle: {e}\n"
+                        f"Actionable hints:\n"
+                        f"  1. Ensure the module declaring '@register_model(family=\"{family}\", ...)' is imported.\n"
+                        f"  2. Or pass an initialized model instance directly: load_bundle('{path.name}', model=MyModel(...))"
+                    ) from e
 
             # Load model state_dict
             weights_bytes = zf.read("weights.pt")
@@ -171,7 +179,7 @@ def resume_training(
             if "train_state.pt" not in namelist:
                 raise ResumeStateError(
                     f"Bundle '{bundle_path}' does not contain 'train_state.pt'. "
-                    "Make sure it was saved with is_checkpoint=True."
+                    "Make sure it was saved with optimizer/training state to allow resumption."
                 )
 
             manifest_data = zf.read("manifest.json")

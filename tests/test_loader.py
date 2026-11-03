@@ -80,7 +80,6 @@ def test_resume_training_exact_continuity(tmp_path: Path) -> None:
         family="linear_classifier",
         version="1.0.0",
         init_args={"in_features": 4, "out_features": 2},
-        is_checkpoint=True,
         optimizer=opt1,
         scheduler=sched1,
         epoch=1,
@@ -129,8 +128,37 @@ def test_resume_non_checkpoint_fails(tmp_path: Path) -> None:
         model=model,
         family="linear_classifier",
         version="1.0.0",
-        is_checkpoint=False,
     )
 
     with pytest.raises(ResumeStateError, match="does not contain 'train_state.pt'"):
         resume_training(bundle_path=bundle_path, model=model)
+
+
+def test_load_bundle_unregistered_model_actionable_error_and_direct_instance(tmp_path: Path) -> None:
+    model = Classifier(in_features=4, out_features=2)
+    bundle_path = tmp_path / "unregistered.bundle"
+
+    # Save with a family that is NOT in the registry
+    save_bundle(
+        output_path=bundle_path,
+        model=model,
+        family="unregistered_custom_net",
+        version="0.1.0",
+    )
+
+    # 1. Loading without model instance should fail with helpful actionable hints
+    from mangosta.exceptions import ModelNotFoundError
+    with pytest.raises(ModelNotFoundError, match="Actionable hints") as exc_info:
+        load_bundle(bundle_path)
+
+    err_msg = str(exc_info.value)
+    assert "Ensure the module declaring" in err_msg
+    assert "Or pass an initialized model instance directly" in err_msg
+
+    # 2. Loading WITH model instance should succeed without registry lookup
+    fresh_instance = Classifier(in_features=4, out_features=2)
+    loaded = load_bundle(bundle_path, model=fresh_instance)
+    assert loaded.family == "unregistered_custom_net"
+    assert loaded.version == "0.1.0"
+    assert loaded.model is fresh_instance
+
