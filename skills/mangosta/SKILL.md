@@ -42,9 +42,9 @@ All primary entrypoints are exposed at the top-level package namespace (`from ma
    `ModelRegistry.register_model()` rejects duplicate `(family, version)` pairs with `RegistryCollisionError`.
    Never overwrite versions silently; bump the semantic version (e.g., `1.0.0` -> `1.1.0`) unless explicitly permitted via `allow_override=True`.
 
-4. **Separate Checkpoints from Final Inference Bundles**:
-   - Training checkpoints: set `is_checkpoint=True`, pass `optimizer`, `scheduler`, and `scaler`. This serializes `train_state.pt` including random generator states across PyTorch (CPU and CUDA), NumPy, and Python.
-   - Inference bundles: set `is_checkpoint=False`. This eliminates optimizer weights and keeps artifacts lightweight.
+4. **Automatic Checkpoints vs Final Inference Bundles**:
+   - Training checkpoints: simply pass `optimizer`, `scheduler`, and/or `scaler` to `save_bundle()`. Mangosta automatically marks the bundle as a checkpoint and serializes `train_state.pt` with random generator states (PyTorch CPU/CUDA, NumPy, Python).
+   - Inference bundles: omit optimizer/scheduler to produce a lightweight inference bundle containing only weights, schema, and manifest.
 
 5. **Log Images and Evaluation Artifacts Directly**:
    Use `run.log_image("name", tensor_or_array, step=step)` to persist validation samples, predictions, and feature maps.
@@ -121,7 +121,7 @@ with RunTracker(experiment="vision_models", run_name="exp_run_01") as run:
     run.log_params({"lr": 1e-3, "batch_size": 32, "weight_decay": 1e-4})
 
     for step, loss_value in enumerate(train_losses):
-        run.log_metric("train_loss", loss_value, step=step)
+        run.log_metrics({"train_loss": loss_value}, step=step)
 
     # Log validation tensor (C, H, W or H, W, C) or existing file
     run.log_image("val_prediction", val_image_tensor, step=10)
@@ -145,7 +145,6 @@ save_bundle(
     version="1.0.0",
     init_args={"in_channels": 3, "num_classes": 10},
     sample_input=torch.randn(1, 3, 224, 224),
-    is_checkpoint=True,
     optimizer=optimizer,
     scheduler=scheduler,
     epoch=10,
@@ -221,5 +220,5 @@ export_onnx(
 | `RegistryCollisionError` | Attempted to register already existing `(family, version)`. | Bump semantic version or set `allow_override=True`. |
 | `ModelNotFoundError` | Family or version not registered in `ModelRegistry`. | Ensure class module is imported before `load_bundle()` or `build()`. |
 | `SchemaValidationError` | Input tensor shape or dtype violates inferred contract. | Verify incoming tensor dimensionality against `bundle.schema`. |
-| `ResumeStateError` | Bundle loaded with `resume_training` lacks `train_state.pt`. | Ensure bundle was saved with `is_checkpoint=True`. |
+| `ResumeStateError` | Bundle loaded with `resume_training` lacks `train_state.pt`. | Ensure bundle was saved with optimizer/scheduler to capture training state. |
 | `BundleCorruptedError` | Archive damaged or missing `manifest.json`/`weights.pt`. | Check storage integrity or re-export artifact. |
