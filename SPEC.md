@@ -172,12 +172,18 @@ mi-proyecto/
 [ v0.2.x (Alpha) ]
        │
        ▼
-[ Fase 1: Scaffolding, DX, Smart Defaults & Agent Context ]
+[ Fase 1: Scaffolding, DX, Smart Defaults & Agent Context ] [COMPLETADA]
   - Limpieza de `init`, lazy folders, pyproject.toml, AGENTS.md, smart defaults en save_bundle/log_metrics.
        │
        ▼
-[ Fase 2: I/O Hardening, SafeTensors & Zero-Overhead ]
+[ Fase 2: I/O Hardening, SafeTensors & Zero-Overhead ] [COMPLETADA]
   - SafeTensors, hashing SHA-256, atomic rename blindado, buffer I/O sin stalls de fsync, SIGINT/SIGTERM.
+       │
+       ▼
+[ Fase 2.5: Formalización del Arnés de Pruebas, Auditoría Rigurosa y CI Offline ]
+  - Erradicación de auto-trampas y mocks blandos: pruebas sobre PyTorch y SafeTensors reales.
+  - Auditoría exhaustiva componente por componente (init, bundle, loader, tracker, schema, export).
+  - Arnés Docker Ubuntu 24.04 aislado sin red (--network none) automatizado.
        │
        ▼
 [ Fase 3: Suite de Determinismo, CI & Benchmarks de Sobrecarga ]
@@ -191,28 +197,45 @@ mi-proyecto/
 [ v1.0.0 (Release Estable) ]
 ```
 
-### Fase 1: Scaffolding, DX, Smart Defaults y Contexto para Agentes (Objetivo: v0.3.0)
-- [ ] Refactorizar `src/mangosta/cli/init_project.py`:
-  - [ ] Eliminar creación anticipada de carpetas vacías (`checkpoints/`, `experiments/`, `outputs/`) y sus `.gitkeep`.
-  - [ ] Consolidar la plantilla minimalista: `configs/exp_baseline.yaml`, `src/models.py`, `entrypoints/train.py`, `entrypoints/infer.py`.
-  - [ ] Generar `pyproject.toml` con `[project.scripts]` para `uv run train` y `uv run infer`.
-  - [ ] Generar `.agents/mangosta.md` con las instrucciones operativas canónicas para agentes de IA.
-  - [ ] Actualizar `.gitignore` y `README.md`.
-- [ ] Implementar Smart Defaults en `src/mangosta/artifacts/bundle.py`:
-  - [ ] Inferencia de `family` a partir de `model.__class__.__name__.lower()`.
-  - [ ] Inferencia automática de `is_checkpoint=True` si se suministra `optimizer`, `scheduler` o `scaler`.
-- [ ] Implementar `log_metrics(dict)` en `src/mangosta/tracking/tracker.py`.
-- [ ] Mejorar mensajes de diagnóstico y sugerencias accionables en `load_bundle`.
-- [ ] Actualizar y pasar suite de tests de scaffolding (`tests/test_init.py`).
+### Fase 1: Scaffolding, DX, Smart Defaults y Contexto para Agentes (Objetivo: v0.3.0) [COMPLETADA]
+- [x] Refactorizar `src/mangosta/cli/init_project.py`:
+  - [x] Eliminar creación anticipada de carpetas vacías (`checkpoints/`, `experiments/`, `outputs/`) y sus `.gitkeep`.
+  - [x] Consolidar la plantilla minimalista: `configs/exp_baseline.yaml`, `src/models.py`, `entrypoints/train.py`, `entrypoints/infer.py`.
+  - [x] Generar `pyproject.toml` con `[project.scripts]` para `uv run train` y `uv run infer`.
+  - [x] Generar `.agents/mangosta.md` con las instrucciones operativas canónicas para agentes de IA.
+  - [x] Actualizar `.gitignore` y `README.md`.
+- [x] Implementar Smart Defaults en `src/mangosta/artifacts/bundle.py`:
+  - [x] Inferencia de `family` a partir de `model.__class__.__name__.lower()`.
+  - [x] Inferencia automática de `is_checkpoint=True` si se suministra `optimizer`, `scheduler` o `scaler`.
+- [x] Implementar `log_metrics(dict)` en `src/mangosta/tracking/tracker.py`.
+- [x] Mejorar mensajes de diagnóstico y sugerencias accionables en `load_bundle`.
+- [x] Actualizar y pasar suite de tests de scaffolding (`tests/test_init.py`).
 
-### Fase 2: I/O Seguro, SafeTensors y Persistencia Resiliente (Objetivo: v0.4.0)
-- [ ] Añadir `safetensors>=0.4.0` a dependencias en `pyproject.toml`.
-- [ ] Migrar almacenamiento de pesos en `save_bundle` a `model.safetensors`.
-- [ ] Incorporar cálculo y verificación de SHA-256 de pesos en `manifest.json`.
-- [ ] Blindar escritura atómica con limpieza estricta de `.tmp` en bloques `finally`.
-- [ ] Actualizar `load_bundle` y `resume_training` para leer `model.safetensors` (manteniendo retrocompatibilidad con `weights.pt`).
-- [ ] Desacoplar `fsync` continuo en `RunTracker.log_metric` / `log_metrics` para garantizar zero-overhead en el entrenamiento.
-- [ ] Implementar manejadores de señales `SIGINT`/`SIGTERM` en `RunTracker` para salida limpia.
+### Fase 2: I/O Seguro, SafeTensors y Persistencia Resiliente (Objetivo: v0.4.0) [COMPLETADA]
+- [x] Añadir `safetensors>=0.4.0` a dependencias en `pyproject.toml`.
+- [x] Migrar almacenamiento de pesos en `save_bundle` a `model.safetensors`.
+- [x] Incorporar cálculo y verificación de SHA-256 de pesos en `manifest.json`.
+- [x] Blindar escritura atómica con limpieza estricta de `.tmp` en bloques `finally`.
+- [x] Actualizar `load_bundle` y `resume_training` para leer `model.safetensors` (clean break: formato canónico único).
+- [x] Desacoplar `fsync` continuo en `RunTracker.log_metrics` (`sync_interval=10`, `flush_disk()`).
+- [x] Implementar manejadores de señales `SIGINT`/`SIGTERM` en `RunTracker` para salida limpia.
+
+### Fase 2.5: Formalización del Arnés de Pruebas, Auditoría Rigurosa y CI Offline (Objetivo: v0.4.5)
+- [ ] **Erradicar la "auto-trampa" y mocks superficiales:**
+  - [ ] Garantizar que las pruebas unitarias y de integración auditan la lógica real contra dependencias verdaderas (PyTorch, SafeTensors, NumPy, PyYAML).
+  - [ ] Prohibir mocks que simulen el comportamiento del propio código bajo test; los mocks quedan reservados exclusivamente para simular fallos de hardware externos (disco lleno, fallo de I/O en `os.replace`, señales del SO).
+- [ ] **Formalizar `conftest.py` y fixtures canónicos:**
+  - [ ] Arquitecturas de red representativas (MLP simple, red con tensores no contiguos, red con salidas múltiples en diccionario).
+  - [ ] Manejadores de temporales aislados y generadores de tensores sintéticos controlados por semilla.
+- [ ] **Auditoría Componente por Componente:**
+  - [ ] *Auditoría 1: Scaffolding (`tests/test_init.py`):* Validar generación sintáctica de `pyproject.toml` (compatible con Hatchling y `uv`), reglas en `.agents/mangosta.md` y estructura de archivos vivos sin carpetas vacías.
+  - [ ] *Auditoría 2: Bundles & Pesos (`tests/test_bundle.py`):* Forzar tensores no contiguos en memoria (`.transpose()`) para comprobar normalización obligatoria antes de SafeTensors; auditar hash SHA-256 exacto y verificar limpieza atómica en `finally`.
+  - [ ] *Auditoría 3: Carga, Integridad y Desacoplamiento (`tests/test_loader.py`):* Comprobar que alteraciones de 1 solo bit en `model.safetensors` o `manifest.json` detienen la carga inmediatamente antes de instanciar pesos; validar que `load_bundle` con modelo explícito no toca el registro global; probar reanudación determinista de checkpoint.
+  - [ ] *Auditoría 4: Tracking, I/O y Señales (`tests/test_tracker.py`):* Auditar que `f.flush()` vuelca inmediatamente en userspace sin `os.fsync`, comprobar cadencia exacta de `sync_interval=10`, auditar integridad de `metrics.jsonl` ante `SIGINT`/`SIGTERM` y llamadas en hilos secundarios.
+  - [ ] *Auditoría 5: Contratos y Exportación (`tests/test_schema.py`, `tests/test_exporter.py`):* Auditar validación de schema (rechazo de shapes/tipos inválidos antes de entrar a CUDA) y exportación ONNX directamente desde bundles SafeTensors.
+- [ ] **Estandarización del Arnés de Validación Offline (Docker Ubuntu 24.04):**
+  - [ ] Integrar script `scripts/test_offline.sh` para levantar el contenedor con `--network none`, ejecutar la suite completa y emitir reporte de auditoría en 1 comando.
+  - [ ] Documentar el procedimiento de auditoría en el README de testing.
 
 ### Fase 3: Suite de Determinismo, CI y Benchmark de Rendimiento (Objetivo: v0.5.0-beta)
 - [ ] Implementar `tests/test_determinism.py`:
