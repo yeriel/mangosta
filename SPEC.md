@@ -224,13 +224,22 @@ mi-proyecto/
 - [ ] Implementar `tests/test_performance_overhead.py`:
   - [ ] Medición automatizada de latencia: verificar que `RunTracker` agrega menos del **0.5% de sobrecarga** al bucle de entrenamiento.
 
-### Fase 4: Congelamiento de API, CLI Machine-Readable y Release Estable (Objetivo: v1.0.0)
+### Fase 4: Congelamiento de API, CLI Machine-Readable, Documentación y Release Estable (Objetivo: v1.0.0)
 - [ ] Actualizar `mangosta inspect <bundle>` en `src/mangosta/cli/main.py`:
   - [ ] Lectura segura de encabezados SafeTensors sin instanciar PyTorch.
   - [ ] Soporte para flag `--json` (salida estructurada para agentes y scripts).
 - [ ] Congelar la superficie de API pública en `src/mangosta/__init__.py`.
 - [ ] Verificación de tipado estricto con `mypy --strict` en la API pública.
 - [ ] Cobertura de tests $> 85\%$.
+- [ ] **Documentación Integral y Guías de Uso de Primera Clase:**
+  - [ ] Reescritura del `README.md` principal: Quickstart en 3 minutos, tabla comparativa técnica (vs MLflow, vs W&B, vs vanilla PyTorch), arquitectura de archivos planos y ejemplos listos para copiar y pegar.
+  - [ ] Referencia completa de API pública documentada (`docs/api/`): docstrings detallados, tipos de entrada/salida y snippets ejecutables para cada componente (`RunTracker`, `save_bundle`, `load_bundle`, `resume_training`, `export_onnx`, `ModelRegistry`, `infer_schema`).
+  - [ ] Recetarios y Guías Prácticas de Flujo Real (`docs/guides/`):
+    - *Guía 1: Iteración rápida en solitario (prototipado + tracking con zero-overhead).*
+    - *Guía 2: Tolerancia a fallos: cómo guardar checkpoints atómicos y reanudar bit-a-bit tras un crash.*
+    - *Guía 3: Contratos de tensores e inferencia segura en producción (LoadedBundle + ONNX).*
+    - *Guía 4: Supervisión de Agentes de IA: flujos con Cursor, Claude Code y Antigravity usando CLI --json y .agents/mangosta.md.*
+  - [ ] Manual de CLI con ejemplos de terminal para `mangosta init`, `inspect`, `view`, `report` y `export-onnx`.
 
 ---
 
@@ -243,3 +252,4 @@ mi-proyecto/
 5. **Flujo de desarrollo en 1 línea:** Guardar checkpoints y registrar métricas no exige boilerplate innecesario.
 6. **Determinismo comprobado:** La prueba de invariancia bit-a-bit pasa de forma reproducible en CI.
 7. **Seguridad y compatibilidad:** Pesos en SafeTensors, eliminación de vulnerabilidades de `pickle` e integridad validada con SHA-256.
+8. **Documentación de Primera Clase:** README modernizado, referencia completa de API con ejemplos y recetarios paso a paso de flujos de trabajo reales.
