@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
 import platform
 import random
+import uuid
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import safetensors.torch
 import torch
 import torch.nn as nn
 import yaml
@@ -102,7 +105,7 @@ def save_bundle(
     """
     dest = Path(output_path).resolve()
     dest.parent.mkdir(parents=True, exist_ok=True)
-    tmp_dest = dest.with_name(f"{dest.name}.tmp_{os.getpid()}")
+    tmp_dest = dest.with_name(f"{dest.name}.tmp_{os.getpid()}_{uuid.uuid4().hex[:6]}")
 
     # Smart defaults
     resolved_family = family if family is not None else model.__class__.__name__.lower()
@@ -112,6 +115,15 @@ def save_bundle(
     if schema is None and sample_input is not None:
         schema = infer_schema(model, sample_input)
 
+    # Serialize model weights with SafeTensors (zero pickle) and compute SHA-256 fingerprint
+    state_dict = model.state_dict()
+    contiguous_weights = {
+        k: v.contiguous() if isinstance(v, torch.Tensor) else v
+        for k, v in state_dict.items()
+    }
+    weights_bytes = safetensors.torch.save(contiguous_weights)
+    weights_sha256 = hashlib.sha256(weights_bytes).hexdigest()
+
     # Build manifest
     manifest: dict[str, Any] = {
         "format_version": "1.0",
@@ -119,6 +131,8 @@ def save_bundle(
         "version": version,
         "init_args": init_args or {},
         "is_checkpoint": is_checkpoint,
+        "weights_format": "safetensors",
+        "weights_sha256": weights_sha256,
         "epoch": epoch,
         "step": step,
         "dataset_hash": dataset_hash,
@@ -144,36 +158,43 @@ def save_bundle(
         elif isinstance(config, str):
             config_str = config
 
-    with zipfile.ZipFile(tmp_dest, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        # 1. Manifest
-        manifest_bytes = json.dumps(manifest, indent=2).encode("utf-8")
-        zf.writestr("manifest.json", manifest_bytes)
+    try:
+        with zipfile.ZipFile(tmp_dest, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            # 1. Manifest
+            manifest_bytes = json.dumps(manifest, indent=2).encode("utf-8")
+            zf.writestr("manifest.json", manifest_bytes)
 
-        # 2. Config if provided
-        if config_str is not None:
-            zf.writestr("config.yaml", config_str.encode("utf-8"))
+            # 2. Config if provided
+            if config_str is not None:
+                zf.writestr("config.yaml", config_str.encode("utf-8"))
 
-        # 3. Model weights
-        weights_buffer = io.BytesIO()
-        torch.save(model.state_dict(), weights_buffer)
-        zf.writestr("weights.pt", weights_buffer.getvalue())
+            # 3. Model weights in SafeTensors format
+            zf.writestr("model.safetensors", weights_bytes)
 
-        # 4. Training state (only if is_checkpoint is True)
-        if is_checkpoint:
-            train_state: dict[str, Any] = {
-                "epoch": epoch,
-                "step": step,
-                "optimizer_state_dict": (optimizer.state_dict() if optimizer is not None else None),
-                "scheduler_state_dict": (scheduler.state_dict() if scheduler is not None else None),
-                "scaler_state_dict": (scaler.state_dict() if scaler is not None else None),
-                "rng_states": _capture_rng_states(),
-            }
-            train_buffer = io.BytesIO()
-            torch.save(train_state, train_buffer)
-            zf.writestr("train_state.pt", train_buffer.getvalue())
+            # 4. Training state (only if is_checkpoint is True)
+            if is_checkpoint:
+                train_state: dict[str, Any] = {
+                    "epoch": epoch,
+                    "step": step,
+                    "optimizer_state_dict": (optimizer.state_dict() if optimizer is not None else None),
+                    "scheduler_state_dict": (scheduler.state_dict() if scheduler is not None else None),
+                    "scaler_state_dict": (scaler.state_dict() if scaler is not None else None),
+                    "rng_states": _capture_rng_states(),
+                }
+                train_buffer = io.BytesIO()
+                torch.save(train_state, train_buffer)
+                zf.writestr("train_state.pt", train_buffer.getvalue())
 
-    # Atomic rename to prevent corrupt bundles on unexpected termination
-    os.replace(tmp_dest, dest)
+        # Atomic rename to prevent corrupt bundles on unexpected termination
+        os.replace(tmp_dest, dest)
+    finally:
+        # Guarantee zero orphaned .tmp files if writing or replacing failed
+        if tmp_dest.exists():
+            try:
+                tmp_dest.unlink()
+            except OSError:
+                pass
+
     return dest
 
 

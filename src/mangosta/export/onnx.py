@@ -9,6 +9,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+import safetensors.torch
 import torch
 from torch import nn
 
@@ -50,13 +51,11 @@ def _load_weights_into_model(
     # Check if bundle
     if path.suffix == ".bundle":
         with zipfile.ZipFile(path, "r") as zf:
-            if "weights.pt" not in zf.namelist():
-                raise ValueError(f"Bundle {path} missing 'weights.pt'")
-            weights_bytes = zf.read("weights.pt")
-            state_dict = torch.load(
-                io.BytesIO(weights_bytes), map_location=device, weights_only=True
-            )
-            model.load_state_dict(state_dict)
+            if "model.safetensors" not in zf.namelist():
+                raise ValueError(f"Bundle {path} missing 'model.safetensors'")
+            weights_bytes = zf.read("model.safetensors")
+            state_dict = safetensors.torch.load(weights_bytes)
+            model.load_state_dict({k: v.to(device) for k, v in state_dict.items()})
             return
 
     # Standard .pth / .pt

@@ -32,7 +32,8 @@ def test_save_bundle_inference_mode(tmp_path: Path) -> None:
     with zipfile.ZipFile(saved, "r") as zf:
         names = zf.namelist()
         assert "manifest.json" in names
-        assert "weights.pt" in names
+        assert "model.safetensors" in names
+        assert "weights.pt" not in names
         assert "config.yaml" in names
         assert "train_state.pt" not in names
 
@@ -40,6 +41,9 @@ def test_save_bundle_inference_mode(tmp_path: Path) -> None:
     assert manifest["family"] == "mlp"
     assert manifest["version"] == "1.0.0"
     assert manifest["is_checkpoint"] is False
+    assert manifest["weights_format"] == "safetensors"
+    assert "weights_sha256" in manifest
+    assert len(manifest["weights_sha256"]) == 64
     assert manifest["schema"] is not None
     assert manifest["schema"]["inputs"][0]["shape"] == [None, 4]
 
@@ -106,7 +110,8 @@ def test_save_bundle_smart_defaults_inference_mode(tmp_path: Path) -> None:
     with zipfile.ZipFile(saved, "r") as zf:
         names = zf.namelist()
         assert "manifest.json" in names
-        assert "weights.pt" in names
+        assert "model.safetensors" in names
+        assert "weights.pt" not in names
         assert "train_state.pt" not in names
 
 
@@ -124,8 +129,29 @@ def test_save_bundle_smart_defaults_checkpoint_mode(tmp_path: Path) -> None:
     assert manifest["version"] == "0.1.0"
     assert manifest["is_checkpoint"] is True
     assert manifest["epoch"] == 4
+    assert manifest["weights_format"] == "safetensors"
+    assert len(manifest["weights_sha256"]) == 64
 
     with zipfile.ZipFile(saved, "r") as zf:
         names = zf.namelist()
+        assert "model.safetensors" in names
         assert "train_state.pt" in names
+
+
+def test_save_bundle_cleanup_tmp_on_failure(tmp_path: Path) -> None:
+    model = DummyMLP(in_features=4, out_features=2)
+    bundle_path = tmp_path / "fail.bundle"
+
+    from unittest.mock import patch
+
+    # Simulate an error during zip writing
+    with patch("zipfile.ZipFile", side_effect=RuntimeError("Disk failure simulation")):
+        with pytest.raises(RuntimeError, match="Disk failure simulation"):
+            save_bundle(bundle_path, model)
+
+    # Verify that NO temporary .tmp_* files remain in the target directory
+    tmp_files = list(tmp_path.glob("*.tmp_*"))
+    assert len(tmp_files) == 0, f"Found orphaned temp files: {tmp_files}"
+    assert not bundle_path.exists()
+
 

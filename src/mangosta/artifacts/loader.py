@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import zipfile
@@ -9,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
+import safetensors.torch
 import torch
 import torch.nn as nn
 import yaml
@@ -80,6 +82,41 @@ class LoadedBundle:
         return output
 
 
+def _load_and_verify_weights(
+    zf: zipfile.ZipFile,
+    manifest: dict[str, Any],
+    bundle_path: str | Path,
+    device: str | torch.device = "cpu",
+) -> dict[str, torch.Tensor]:
+    """Extract model.safetensors, cryptographically verify SHA-256 fingerprint, and load state dict."""
+    path_name = Path(bundle_path).name
+    if "model.safetensors" not in zf.namelist():
+        raise BundleCorruptedError(
+            f"Bundle archive '{path_name}' is missing 'model.safetensors'."
+        )
+
+    weights_bytes = zf.read("model.safetensors")
+
+    # Cryptographic integrity verification
+    expected_sha256 = manifest.get("weights_sha256")
+    if expected_sha256:
+        actual_sha256 = hashlib.sha256(weights_bytes).hexdigest()
+        if actual_sha256 != expected_sha256:
+            raise BundleCorruptedError(
+                f"Bundle weights cryptographic integrity check failed for '{path_name}'.\n"
+                f"Expected SHA-256: {expected_sha256}\n"
+                f"Actual SHA-256:   {actual_sha256}\n"
+                "The model weights have been corrupted or tampered with."
+            )
+
+    # SafeTensors load directly from memory (zero pickle execution)
+    state_dict = safetensors.torch.load(weights_bytes)
+    if isinstance(device, (str, torch.device)):
+        target_device = torch.device(device)
+        state_dict = {k: v.to(target_device) for k, v in state_dict.items()}
+    return state_dict
+
+
 def load_bundle(
     bundle_path: str | Path,
     map_location: str | torch.device = "cpu",
@@ -99,8 +136,6 @@ def load_bundle(
             namelist = zf.namelist()
             if "manifest.json" not in namelist:
                 raise BundleCorruptedError(f"Missing 'manifest.json' in {bundle_path}")
-            if "weights.pt" not in namelist:
-                raise BundleCorruptedError(f"Missing 'weights.pt' in {bundle_path}")
 
             manifest_data = zf.read("manifest.json")
             manifest = json.loads(manifest_data.decode("utf-8"))
@@ -130,10 +165,8 @@ def load_bundle(
                         f"  2. Or pass an initialized model instance directly: load_bundle('{path.name}', model=MyModel(...))"
                     ) from e
 
-            # Load model state_dict
-            weights_bytes = zf.read("weights.pt")
-            weights_buffer = io.BytesIO(weights_bytes)
-            state_dict = torch.load(weights_buffer, map_location=map_location, weights_only=True)
+            # Load model state_dict with cryptographic verification
+            state_dict = _load_and_verify_weights(zf, manifest, path, device=map_location)
             model.load_state_dict(state_dict)
             model.to(map_location)
             model.eval()
@@ -185,14 +218,10 @@ def resume_training(
             manifest_data = zf.read("manifest.json")
             manifest = json.loads(manifest_data.decode("utf-8"))
 
-            # 1. Restore model weights
-            weights_bytes = zf.read("weights.pt")
-            state_dict = torch.load(
-                io.BytesIO(weights_bytes),
-                map_location=map_location,
-                weights_only=True,
-            )
+            # 1. Restore model weights with cryptographic verification
+            state_dict = _load_and_verify_weights(zf, manifest, path, device=map_location)
             model.load_state_dict(state_dict)
+            model.to(map_location)
 
             # 2. Restore training state
             train_bytes = zf.read("train_state.pt")

@@ -12,7 +12,7 @@ import torch.optim as optim
 
 from mangosta.artifacts import load_bundle, resume_training, save_bundle
 from mangosta.core import ModelRegistry
-from mangosta.exceptions import ResumeStateError, SchemaValidationError
+from mangosta.exceptions import BundleCorruptedError, ModelNotFoundError, ResumeStateError, SchemaValidationError
 from tests.conftest import DummyMLP
 
 
@@ -147,7 +147,6 @@ def test_load_bundle_unregistered_model_actionable_error_and_direct_instance(tmp
     )
 
     # 1. Loading without model instance should fail with helpful actionable hints
-    from mangosta.exceptions import ModelNotFoundError
     with pytest.raises(ModelNotFoundError, match="Actionable hints") as exc_info:
         load_bundle(bundle_path)
 
@@ -161,4 +160,60 @@ def test_load_bundle_unregistered_model_actionable_error_and_direct_instance(tmp
     assert loaded.family == "unregistered_custom_net"
     assert loaded.version == "0.1.0"
     assert loaded.model is fresh_instance
+
+
+def test_load_bundle_tampered_weights_fails(tmp_path: Path) -> None:
+    """Tampering with model.safetensors must trigger BundleCorruptedError due to SHA-256 mismatch."""
+    import zipfile
+
+    model = Classifier(in_features=4, out_features=2)
+    bundle_path = tmp_path / "valid.bundle"
+    save_bundle(bundle_path, model)
+
+    # Tamper with model.safetensors
+    tampered_bundle = tmp_path / "tampered.bundle"
+    with zipfile.ZipFile(bundle_path, "r") as src, zipfile.ZipFile(tampered_bundle, "w") as dst:
+        for item in src.infolist():
+            data = src.read(item.filename)
+            if item.filename == "model.safetensors":
+                data = b"tampered_safetensors_bytes"
+            dst.writestr(item, data)
+
+    with pytest.raises(BundleCorruptedError, match="cryptographic integrity check failed"):
+        load_bundle(tampered_bundle, model=model)
+
+
+def test_resume_training_tampered_weights_fails(tmp_path: Path) -> None:
+    """Tampering with checkpoint weights must trigger BundleCorruptedError on resume."""
+    import zipfile
+
+    model = Classifier(in_features=4, out_features=2)
+    optimizer = optim.SGD(model.parameters(), lr=0.01)
+    bundle_path = tmp_path / "ckpt.bundle"
+    save_bundle(bundle_path, model, optimizer=optimizer, epoch=1)
+
+    tampered_bundle = tmp_path / "tampered_ckpt.bundle"
+    with zipfile.ZipFile(bundle_path, "r") as src, zipfile.ZipFile(tampered_bundle, "w") as dst:
+        for item in src.infolist():
+            data = src.read(item.filename)
+            if item.filename == "model.safetensors":
+                data = b"tampered_safetensors_bytes"
+            dst.writestr(item, data)
+
+    with pytest.raises(BundleCorruptedError, match="cryptographic integrity check failed"):
+        resume_training(tampered_bundle, model=model, optimizer=optimizer)
+
+
+def test_load_bundle_missing_safetensors_fails(tmp_path: Path) -> None:
+    """A bundle missing model.safetensors must raise BundleCorruptedError."""
+    import zipfile
+
+    missing_bundle = tmp_path / "missing_weights.bundle"
+    with zipfile.ZipFile(missing_bundle, "w") as zf:
+        zf.writestr("manifest.json", '{"family": "dummy", "version": "0.1.0"}')
+
+    model = Classifier(in_features=4, out_features=2)
+    with pytest.raises(BundleCorruptedError, match="missing 'model.safetensors'"):
+        load_bundle(missing_bundle, model=model)
+
 

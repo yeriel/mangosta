@@ -42,9 +42,11 @@ def inspect_bundle(bundle_path: str) -> None:
     # Inspect Weights inside zip
     try:
         with zipfile.ZipFile(path, "r") as zf:
-            if "weights.pt" in zf.namelist():
-                weights_size = zf.getinfo("weights.pt").file_size
-                print(f"Weights Size:   {weights_size / (1024 * 1024):.2f} MB")
+            if "model.safetensors" in zf.namelist():
+                weights_size = zf.getinfo("model.safetensors").file_size
+                print(f"Weights Format: safetensors ({weights_size / (1024 * 1024):.2f} MB)")
+            if manifest.get("weights_sha256"):
+                print(f"Weights SHA:    {manifest.get('weights_sha256')}")
             namelist = [n for n in zf.namelist() if not n.endswith("/")]
             print(f"Files in zip:   {', '.join(namelist)}")
     except Exception:
