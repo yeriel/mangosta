@@ -1,0 +1,41 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install Python 3.12, venv, and basic system tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-venv \
+    ca-certificates \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Create virtual environment
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Install core runtime & testing dependencies
+RUN pip install --no-cache-dir \
+    --index-url https://download.pytorch.org/whl/cpu \
+    "torch>=2.0.0"
+
+RUN pip install --no-cache-dir \
+    "numpy>=2.0.0" \
+    "safetensors>=0.4.0" \
+    "pyyaml>=6.0" \
+    "packaging>=23.0" \
+    "onnx>=1.14.0" \
+    "pytest>=7.0.0"
+
+# Copy repository
+COPY . /app/mangosta
+
+# Install Mangosta in editable mode
+RUN pip install --no-cache-dir -e /app/mangosta
+
+WORKDIR /app/mangosta
+
+CMD ["python3", "docker/verify_offline.py"]
