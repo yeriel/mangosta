@@ -14,11 +14,10 @@ from tests.conftest import DummyMLP
 def test_generate_report_from_run_dir(tmp_path: Path) -> None:
     exp_dir = tmp_path / "experiments"
     tracker = RunTracker(experiment="vision_exp", run_name="run_01", root_dir=exp_dir)
-    tracker.log_param("lr", 0.001)
-    tracker.log_param("epochs", 10)
-    tracker.log_metric("train_loss", 0.8, step=0)
-    tracker.log_metric("train_loss", 0.4, step=1)
-    tracker.log_metric("train_loss", 0.2, step=2)
+    tracker.log_params({"lr": 0.001, "epochs": 10})
+    tracker.log_metrics({"train_loss": 0.8}, step=0)
+    tracker.log_metrics({"train_loss": 0.4}, step=1)
+    tracker.log_metrics({"train_loss": 0.2}, step=2)
     tracker.finish()
 
     output_html = tmp_path / "report_run.html"

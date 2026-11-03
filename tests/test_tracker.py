@@ -43,13 +43,11 @@ def test_run_tracker_lifecycle(tmp_path: Path) -> None:
     assert tracker.run_dir.exists()
     assert (tracker.run_dir / "run.json").exists()
 
-    tracker.log_param("lr", 0.001)
-    tracker.log_params({"batch_size": 32, "arch": "resnet"})
+    tracker.log_params({"lr": 0.001, "batch_size": 32, "arch": "resnet"})
 
     # Log metrics
-    tracker.log_metric("loss", 0.5, step=0)
-    tracker.log_metric("loss", 0.3, step=1)
-    tracker.log_metric("accuracy", 0.85, step=1)
+    tracker.log_metrics({"loss": 0.5}, step=0)
+    tracker.log_metrics({"loss": 0.3, "accuracy": 0.85}, step=1)
 
     # Verify atomic file contents
     metrics_file = tracker.run_dir / "metrics.jsonl"
@@ -77,8 +75,8 @@ def test_quick_track_context_manager(tmp_path: Path) -> None:
     dataset_file.write_text("sample dataset content")
 
     with quick_track(run_name="quick_run", root_dir=exp_dir) as run:
-        run.log_param("optimizer", "adam")
-        run.log_metric("train_loss", 0.42, step=0)
+        run.log_params({"optimizer": "adam"})
+        run.log_metrics({"train_loss": 0.42}, step=0)
         h = run.set_dataset(dataset_file)
         assert len(h) == 64
 
@@ -94,9 +92,42 @@ def test_quick_track_marks_failed_on_exception(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match="Training crashed"):
         with quick_track(run_name="crash_run", root_dir=exp_dir) as run:
-            run.log_metric("loss", 1.0, step=0)
+            run.log_metrics({"loss": 1.0}, step=0)
             raise RuntimeError("Training crashed")
 
     with open(run.run_dir / "run.json") as f:
         meta = json.load(f)
     assert meta["status"] == "failed"
+
+
+def test_run_tracker_log_metrics_batch(tmp_path: Path) -> None:
+    exp_dir = tmp_path / "experiments"
+    tracker = RunTracker(experiment="batch_metrics_exp", run_name="run_batch", root_dir=exp_dir)
+
+    # 1. Log multiple metrics in one step
+    tracker.log_metrics({"train_loss": 0.35, "train_acc": 0.88, "lr": 0.001}, step=1)
+
+    # 2. Log another batch without explicit step (auto step)
+    tracker.log_metrics({"val_loss": 0.40, "val_acc": 0.85})
+
+    # 3. Empty dictionary should be a safe no-op
+    tracker.log_metrics({})
+
+    metrics = tracker.get_metrics()
+    assert "train_loss" in metrics
+    assert "train_acc" in metrics
+    assert "lr" in metrics
+    assert "val_loss" in metrics
+    assert "val_acc" in metrics
+
+    assert metrics["train_loss"][0]["value"] == 0.35
+    assert metrics["train_loss"][0]["step"] == 1
+    assert metrics["train_acc"][0]["step"] == 1
+    assert metrics["lr"][0]["step"] == 1
+
+    # Verify metrics.jsonl has exactly 5 lines (3 from step 1, 2 from auto step)
+    lines = (tracker.run_dir / "metrics.jsonl").read_text().strip().split("\n")
+    assert len(lines) == 5
+
+    tracker.finish()
+

@@ -13,8 +13,8 @@ def test_scan_experiments_and_load_details(tmp_path: Path) -> None:
 
     with quick_track(experiment="telemetry", run_name="run_alpha", root_dir=exp_dir) as run:
         run.log_params({"lr": 0.01, "batch_size": 32})
-        run.log_metric("loss", 0.5, step=1)
-        run.log_metric("loss", 0.3, step=2)
+        run.log_metrics({"loss": 0.5}, step=1)
+        run.log_metrics({"loss": 0.3}, step=2)
 
         # Log artifact file and dummy image
         extra_file = tmp_path / "summary.txt"

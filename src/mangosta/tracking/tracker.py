@@ -98,13 +98,8 @@ class RunTracker:
 
         self._save_metadata()
 
-    def log_param(self, key: str, value: Any) -> None:
-        """Log a single hyperparameter or configuration value."""
-        self.params[key] = value
-        self._save_metadata()
-
     def log_params(self, params: dict[str, Any]) -> None:
-        """Log multiple hyperparameters or configurations at once."""
+        """Log multiple hyperparameters or configuration key-values at once."""
         self.params.update(params)
         self._save_metadata()
 
@@ -115,38 +110,42 @@ class RunTracker:
         self._save_metadata()
         return digest
 
-    def log_metric(
+    def log_metrics(
         self,
-        name: str,
-        value: float | int,
+        metrics: dict[str, float | int],
         step: int | None = None,
         timestamp: float | None = None,
     ) -> None:
-        """Atomically record a metric data point to metrics.jsonl.
+        """Atomically record metric data points to metrics.jsonl.
 
-        Guarantees crash-consistency with immediate flush and fsync.
+        Example:
+            run.log_metrics({"loss": 0.42, "acc": 0.91, "lr": 1e-4}, step=epoch)
+            run.log_metrics({"loss": 0.42}, step=epoch)
         """
+        if not metrics:
+            return
+
         if step is None:
             step = self._step_counter
             self._step_counter += 1
 
         now = timestamp if timestamp is not None else time.time()
-        record = {
-            "name": name,
-            "value": float(value),
-            "step": int(step),
-            "timestamp": now,
-        }
+        lines: list[str] = []
 
-        # Keep in-memory cache for reports
-        if name not in self._metrics_cache:
-            self._metrics_cache[name] = []
-        self._metrics_cache[name].append(record)
+        for name, val in metrics.items():
+            record = {
+                "name": name,
+                "value": float(val),
+                "step": int(step),
+                "timestamp": now,
+            }
+            if name not in self._metrics_cache:
+                self._metrics_cache[name] = []
+            self._metrics_cache[name].append(record)
+            lines.append(json.dumps(record) + "\n")
 
-        # Atomic append to disk with fsync
-        line = json.dumps(record) + "\n"
         with open(self.metrics_file, "a", encoding="utf-8") as f:
-            f.write(line)
+            f.writelines(lines)
             f.flush()
             os.fsync(f.fileno())
 
@@ -389,7 +388,7 @@ def quick_track(
     Example:
         with quick_track(run_name="baseline_exp") as run:
             run.log_params({"lr": 0.001, "batch_size": 32})
-            run.log_metric("loss", 0.42, step=0)
+            run.log_metrics({"loss": 0.42}, step=0)
     """
     tracker = RunTracker(experiment=experiment, run_name=run_name, root_dir=root_dir)
     try:
