@@ -104,7 +104,7 @@ def main() -> None:
         for epoch in range(1, 3):
             loss = run_training_step(model, optimizer, criterion, device)
             scheduler.step()
-            tracker.log_metric("train_loss", loss, step=epoch)
+            tracker.log_metrics({"train_loss": loss}, step=epoch)
             print(
                 f"Epoch {epoch} complete | Loss: {loss:.4f} | LR: {scheduler.get_last_lr()[0]:.6f}"
             )
@@ -119,7 +119,6 @@ def main() -> None:
             version="1.0.0",
             init_args={"in_channels": 1, "num_classes": 10},
             sample_input=sample_input,
-            is_checkpoint=True,
             optimizer=optimizer,
             scheduler=scheduler,
             epoch=2,
@@ -181,7 +180,6 @@ def main() -> None:
         version="1.0.0",
         init_args={"in_channels": 1, "num_classes": 10},
         sample_input=sample_input,
-        is_checkpoint=False,
     )
 
     loaded = load_bundle(final_file)

@@ -75,12 +75,11 @@ def _restore_rng_states(rng_states: dict[str, Any]) -> None:
 def save_bundle(
     output_path: str | Path,
     model: nn.Module,
-    family: str,
-    version: str,
+    family: str | None = None,
+    version: str = "0.1.0",
     init_args: dict[str, Any] | None = None,
     sample_input: Any | None = None,
     schema: ModelSchema | None = None,
-    is_checkpoint: bool = False,
     optimizer: Any | None = None,
     scheduler: Any | None = None,
     scaler: Any | None = None,
@@ -94,10 +93,20 @@ def save_bundle(
     """Pack a PyTorch model and its complete runtime context into a self-contained .bundle archive.
 
     Guarantees atomic creation via temporary file swap.
+
+    Smart defaults:
+    - ``family``: Defaults to ``model.__class__.__name__.lower()`` if omitted.
+    - ``version``: Defaults to ``"0.1.0"`` if omitted.
+    - Training state: If ``optimizer``, ``scheduler``, or ``scaler`` is provided,
+      the bundle is automatically marked and packed with training state for resumption.
     """
     dest = Path(output_path).resolve()
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp_dest = dest.with_name(f"{dest.name}.tmp_{os.getpid()}")
+
+    # Smart defaults
+    resolved_family = family if family is not None else model.__class__.__name__.lower()
+    is_checkpoint = optimizer is not None or scheduler is not None or scaler is not None
 
     # Infer schema if sample_input is given and schema not explicitly provided
     if schema is None and sample_input is not None:
@@ -106,7 +115,7 @@ def save_bundle(
     # Build manifest
     manifest: dict[str, Any] = {
         "format_version": "1.0",
-        "family": family,
+        "family": resolved_family,
         "version": version,
         "init_args": init_args or {},
         "is_checkpoint": is_checkpoint,
@@ -149,7 +158,7 @@ def save_bundle(
         torch.save(model.state_dict(), weights_buffer)
         zf.writestr("weights.pt", weights_buffer.getvalue())
 
-        # 4. Training state (only if is_checkpoint=True)
+        # 4. Training state (only if is_checkpoint is True)
         if is_checkpoint:
             train_state: dict[str, Any] = {
                 "epoch": epoch,

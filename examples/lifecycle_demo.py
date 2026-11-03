@@ -99,7 +99,7 @@ def main() -> None:
                 loss.backward()
                 optimizer.step()
 
-                run.log_metric("train_loss", loss.item(), step=global_step)
+                run.log_metrics({"train_loss": loss.item()}, step=global_step)
 
             scheduler.step()
             print(
@@ -114,7 +114,6 @@ def main() -> None:
             version="1.0.0",
             init_args={"in_features": 4, "hidden_dim": 16, "out_features": 1},
             sample_input=torch.randn(1, 4),
-            is_checkpoint=True,
             optimizer=optimizer,
             scheduler=scheduler,
             epoch=2,
@@ -156,7 +155,7 @@ def main() -> None:
                 loss.backward()
                 fresh_optimizer.step()
 
-                run.log_metric("train_loss", loss.item(), step=global_step)
+                run.log_metrics({"train_loss": loss.item()}, step=global_step)
 
             fresh_scheduler.step()
             print(
@@ -171,7 +170,6 @@ def main() -> None:
             version="1.0.0",
             init_args={"in_features": 4, "hidden_dim": 16, "out_features": 1},
             sample_input=torch.randn(1, 4),
-            is_checkpoint=False,
             metrics={"final_loss": loss.item()},
             dataset_hash=data_hash,
             config={"final_epoch": 4, "total_steps": 20},

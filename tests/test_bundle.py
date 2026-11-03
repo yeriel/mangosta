@@ -25,7 +25,6 @@ def test_save_bundle_inference_mode(tmp_path: Path) -> None:
         version="1.0.0",
         init_args={"in_features": 4, "out_features": 2},
         sample_input=torch.randn(1, 4),
-        is_checkpoint=False,
         config={"lr": 0.01, "batch_size": 32},
     )
 
@@ -64,7 +63,6 @@ def test_save_bundle_checkpoint_mode(tmp_path: Path) -> None:
         family="mlp",
         version="1.0.0",
         init_args={"in_features": 4, "out_features": 2},
-        is_checkpoint=True,
         optimizer=optimizer,
         scheduler=scheduler,
         epoch=3,
@@ -90,3 +88,44 @@ def test_corrupted_bundle_handling(tmp_path: Path) -> None:
 
     with pytest.raises(BundleCorruptedError, match="corrupted ZIP archive"):
         read_bundle_manifest(bad_zip)
+
+
+def test_save_bundle_smart_defaults_inference_mode(tmp_path: Path) -> None:
+    model = DummyMLP(in_features=4, out_features=2)
+    bundle_path = tmp_path / "smart_default_infer.bundle"
+
+    # Only output_path and model passed
+    saved = save_bundle(bundle_path, model)
+
+    assert saved.exists()
+    manifest = read_bundle_manifest(saved)
+    assert manifest["family"] == "dummymlp"
+    assert manifest["version"] == "0.1.0"
+    assert manifest["is_checkpoint"] is False
+
+    with zipfile.ZipFile(saved, "r") as zf:
+        names = zf.namelist()
+        assert "manifest.json" in names
+        assert "weights.pt" in names
+        assert "train_state.pt" not in names
+
+
+def test_save_bundle_smart_defaults_checkpoint_mode(tmp_path: Path) -> None:
+    model = DummyMLP(in_features=4, out_features=2)
+    optimizer = optim.SGD(model.parameters(), lr=0.01)
+    bundle_path = tmp_path / "smart_default_ckpt.bundle"
+
+    # Optimizer passed without explicit is_checkpoint or family
+    saved = save_bundle(bundle_path, model, optimizer=optimizer, epoch=4)
+
+    assert saved.exists()
+    manifest = read_bundle_manifest(saved)
+    assert manifest["family"] == "dummymlp"
+    assert manifest["version"] == "0.1.0"
+    assert manifest["is_checkpoint"] is True
+    assert manifest["epoch"] == 4
+
+    with zipfile.ZipFile(saved, "r") as zf:
+        names = zf.namelist()
+        assert "train_state.pt" in names
+

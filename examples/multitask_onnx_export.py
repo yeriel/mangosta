@@ -90,7 +90,6 @@ def main() -> None:
         version="1.0.0",
         init_args={"in_channels": 3, "base_channels": 8},
         sample_input=sample_input,
-        is_checkpoint=False,
         config={"backbone": "custom_cnn", "precision": "fp32"},
     )
     print("Bundle successfully packaged.")
