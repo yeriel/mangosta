@@ -202,6 +202,14 @@ mi-proyecto/
   - mangosta inspect --json, tipado estricto mypy, delimitación _internal, documentación de release.
        │
        ▼
+[ Fase 5: Rediseño, Inspección de Datos Reales en Validación y Potenciación de mangosta view ]
+  - Visor de artefactos e imágenes de validación en datos reales con epoch scrubber (timelapse).
+  - Comparador A/B y visualizador lado a lado (Input vs Ground Truth vs Predicción).
+  - Multi-run overlay, EMA smoothing slider y Live Watch mode.
+  - Inspector visual de bundles, contratos y diff de hiperparámetros.
+  - Estética premium no genérica "Industrial Dark / Craft DX" (Linear-like, offline-first).
+       │
+       ▼
 [ v1.0.0 (Release Estable) ]
 ```
 
@@ -293,6 +301,26 @@ mi-proyecto/
     - *Guía 4: Supervisión de Agentes de IA: flujos con Cursor, Claude Code y Antigravity usando CLI --json y .agents/mangosta.md.*
   - [ ] Manual de CLI con ejemplos de terminal para `mangosta init`, `inspect`, `view`, `report` y `export-onnx`.
 
+### Fase 5: Rediseño de Experiencia Visual, Inspección de Datos Reales en Validación y Potenciación de `mangosta view` (Objetivo: v1.0.0)
+- [ ] **Inspección de Artefactos e Imágenes de Validación en Datos Reales:**
+  - [ ] Versionado automático de imágenes en `RunTracker.log_image`: si se pasa `step`, persigue el linaje temporal sin sobrescribir el archivo previo (ej. `val_sample_step_005.png`), indexado en `run.json`.
+  - [ ] **Línea de Tiempo / Epoch Scrubber:** Slider temporal interactivo para recorrer épocas/pasos y ver cómo evoluciona la predicción del modelo sobre la misma muestra de validación real (efecto timelapse de entrenamiento).
+  - [ ] **Comparador Visual A/B y Grid de Validación:** Vista comparativa para poner lado a lado: Entrada Real vs Ground Truth vs Predicción del Modelo.
+  - [ ] **Lightbox de Alta Resolución con Zoom y Paneo:** Modal para inspeccionar detalles píxel a píxel en tareas de visión computacional, segmentación o mapas de calor.
+- [ ] **Comparación Multi-Run Superpuesta (Overlay) y Suavizado:**
+  - [ ] Selección de múltiples corridas con curvas de métricas superpuestas en SVG interactivo y paleta contrastante.
+  - [ ] Slider de suavizado exponencial (EMA 0.0 a 0.99) para filtrar ruido en curvas de batch en el cliente sin alterar datos de disco.
+  - [ ] Tooltip con cursor vertical sincronizado (crosshair) mostrando valores exactos y pasos en hover.
+- [ ] **Modo "Live Watch" (Auto-Refresh en Tiempo Real):**
+  - [ ] Interruptor `LIVE` que sondea métricas cada 2 segundos sin recargar la página para monitorear el entrenamiento desde un segundo monitor.
+- [ ] **Inspector Visual de Bundles (`.bundle`) y Diff de Hiperparámetros:**
+  - [ ] Pestaña en la UI para inspeccionar contratos `ModelSchema`, tamaños de capas de SafeTensors y hashes SHA-256 sin salir del navegador.
+  - [ ] Resaltado automático de hiperparámetros divergentes entre dos corridas seleccionadas.
+- [ ] **Estética de Vanguardia "Industrial Dark / Craft DX" (Cero Genérica):**
+  - [ ] Paleta calibrada en carbón mate (`#0a0d14`), ámbar cálido (`#f59e0b`), cyan eléctrico (`#06b6d4`) y esmeralda (`#10b981`).
+  - [ ] Tipografía de alta densidad (UI sans-serif limpia con JetBrains/Geist Mono para métricas, pasos, hashes y tensores).
+  - [ ] Cero dependencias externas (HTML/CSS/JS 100% autocontenido en Python, sin Node.js, offline-first).
+
 ---
 
 ## 7. Definición de "Hecho" (Definition of Done para v1.0.0)
@@ -305,3 +333,4 @@ mi-proyecto/
 6. **Determinismo comprobado:** La prueba de invariancia bit-a-bit pasa de forma reproducible en CI.
 7. **Seguridad y compatibilidad:** Pesos en SafeTensors, eliminación de vulnerabilidades de `pickle` e integridad validada con SHA-256.
 8. **Documentación de Primera Clase:** README modernizado, referencia completa de API con ejemplos y recetarios paso a paso de flujos de trabajo reales.
+9. **Visualizador de Clase Mundial (`mangosta view`):** Monitoreo en vivo (Live Watch), comparación multi-run superpuesta, inspector de bundles y galería temporal de muestras de validación sobre datos reales con estética "Craft DX" no genérica.
