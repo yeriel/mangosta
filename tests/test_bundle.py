@@ -11,7 +11,7 @@ import torch.optim as optim
 
 from mangosta.artifacts.bundle import read_bundle_manifest, save_bundle
 from mangosta.exceptions import BundleCorruptedError
-from tests.conftest import DummyMLP
+from tests.conftest import DummyMLP, NonContiguousNet, assert_bundle_integrity
 
 
 def test_save_bundle_inference_mode(tmp_path: Path) -> None:
@@ -153,5 +153,36 @@ def test_save_bundle_cleanup_tmp_on_failure(tmp_path: Path) -> None:
     tmp_files = list(tmp_path.glob("*.tmp_*"))
     assert len(tmp_files) == 0, f"Found orphaned temp files: {tmp_files}"
     assert not bundle_path.exists()
+
+
+def test_save_bundle_non_contiguous_weights_handling(tmp_path: Path) -> None:
+    """SafeTensors requires contiguous buffers; save_bundle must normalize non-contiguous parameters."""
+    model = NonContiguousNet(in_features=4, out_features=2)
+    bundle_path = tmp_path / "non_contiguous.bundle"
+
+    saved = save_bundle(bundle_path, model)
+    assert saved.exists()
+
+    manifest = assert_bundle_integrity(saved)
+    assert manifest["family"] == "noncontiguousnet"
+    assert manifest["weights_format"] == "safetensors"
+
+
+def test_save_bundle_cleanup_on_replace_failure(tmp_path: Path) -> None:
+    """If os.replace fails (e.g. disk full), the finally block must clean up the .tmp_* file."""
+    model = DummyMLP(in_features=4, out_features=2)
+    bundle_path = tmp_path / "replace_fail.bundle"
+
+    from unittest.mock import patch
+
+    with patch("os.replace", side_effect=OSError("Disk full simulation during rename")):
+        with pytest.raises(OSError, match="Disk full simulation"):
+            save_bundle(bundle_path, model)
+
+    # Ensure no leftover temp files
+    tmp_files = list(tmp_path.glob("*.tmp_*"))
+    assert len(tmp_files) == 0, f"Found leftover temp files: {tmp_files}"
+    assert not bundle_path.exists()
+
 
 

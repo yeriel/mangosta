@@ -3,8 +3,14 @@
 from __future__ import annotations
 
 import py_compile
+import sys
 from pathlib import Path
 from unittest.mock import patch
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
 
 from mangosta.cli.init_project import init_project
 from mangosta.cli.main import main
@@ -40,16 +46,41 @@ def test_init_project_structure(tmp_path: Path):
     assert not (target / "experiments").exists()
     assert not (target / "outputs").exists()
 
-    # Verify pyproject.toml contains entrypoint scripts for uv
-    pyproject_text = (target / "pyproject.toml").read_text(encoding="utf-8")
-    assert "entrypoints.train:main" in pyproject_text
-    assert "entrypoints.infer:main" in pyproject_text
-    assert "entrypoints.benchmark:main" in pyproject_text
-    assert "packages = [\"src\", \"entrypoints\"]" in pyproject_text
+    # Rigorous TOML parsing audit
+    pyproject_bytes = (target / "pyproject.toml").read_bytes()
+    toml_data = tomllib.loads(pyproject_bytes.decode("utf-8"))
+
+    # Audit scripts
+    scripts = toml_data["project"]["scripts"]
+    assert scripts["train"] == "entrypoints.train:main"
+    assert scripts["infer"] == "entrypoints.infer:main"
+    assert scripts["benchmark"] == "entrypoints.benchmark:main"
+
+    # Audit dependencies
+    deps = toml_data["project"]["dependencies"]
+    assert any("torch>=" in d for d in deps)
+    assert any("numpy>=2.0.0" in d for d in deps)
+
+    # Audit wheel packaging for Hatchling
+    wheel_pkgs = toml_data["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"]
+    assert wheel_pkgs == ["src", "entrypoints"]
+
+    # Audit agent context file
+    agent_rules = (target / ".agents" / "mangosta.md").read_text(encoding="utf-8")
+    assert "Agent Instructions: Mangosta Project Conventions" in agent_rules
+    assert "uv run train" in agent_rules
+    assert "uv run infer" in agent_rules
+
+    # Audit .gitignore
+    gitignore_text = (target / ".gitignore").read_text(encoding="utf-8")
+    assert "checkpoints/" in gitignore_text
+    assert "experiments/" in gitignore_text
+    assert "*.bundle" in gitignore_text
 
     # Verify all generated python files compile cleanly
     for py_file in target.rglob("*.py"):
         py_compile.compile(str(py_file), doraise=True)
+
 
 
 def test_init_cli_invocation(tmp_path: Path):

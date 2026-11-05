@@ -217,3 +217,52 @@ def test_load_bundle_missing_safetensors_fails(tmp_path: Path) -> None:
         load_bundle(missing_bundle, model=model)
 
 
+def test_load_bundle_single_bit_flip_tampering_caught(tmp_path: Path) -> None:
+    """Modifying even a single bit in model.safetensors must be intercepted before loading."""
+    import zipfile
+
+    model = Classifier(in_features=4, out_features=2)
+    bundle_path = tmp_path / "valid.bundle"
+    save_bundle(bundle_path, model)
+
+    # Invert a single bit in the binary weights
+    tampered_bundle = tmp_path / "bit_flipped.bundle"
+    with zipfile.ZipFile(bundle_path, "r") as src, zipfile.ZipFile(tampered_bundle, "w") as dst:
+        for item in src.infolist():
+            data = src.read(item.filename)
+            if item.filename == "model.safetensors":
+                mutable_data = bytearray(data)
+                # Flip 1 bit in the middle of the payload
+                midpoint = len(mutable_data) // 2
+                mutable_data[midpoint] ^= 0b00000001
+                data = bytes(mutable_data)
+            dst.writestr(item, data)
+
+    with pytest.raises(BundleCorruptedError, match="cryptographic integrity check failed"):
+        load_bundle(tampered_bundle, model=model)
+
+
+def test_load_bundle_manifest_sha_mismatch_caught(tmp_path: Path) -> None:
+    """A tampered manifest with an invalid hash must trigger BundleCorruptedError."""
+    import json
+    import zipfile
+
+    model = Classifier(in_features=4, out_features=2)
+    bundle_path = tmp_path / "valid.bundle"
+    save_bundle(bundle_path, model)
+
+    tampered_bundle = tmp_path / "tampered_manifest.bundle"
+    with zipfile.ZipFile(bundle_path, "r") as src, zipfile.ZipFile(tampered_bundle, "w") as dst:
+        for item in src.infolist():
+            data = src.read(item.filename)
+            if item.filename == "manifest.json":
+                meta = json.loads(data.decode("utf-8"))
+                meta["weights_sha256"] = "f" * 64  # Fake hash
+                data = json.dumps(meta).encode("utf-8")
+            dst.writestr(item, data)
+
+    with pytest.raises(BundleCorruptedError, match="Expected SHA-256"):
+        load_bundle(tampered_bundle, model=model)
+
+
+

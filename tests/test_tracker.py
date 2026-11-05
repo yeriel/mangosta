@@ -226,4 +226,53 @@ def test_run_tracker_signal_handlers_sigint_and_sigterm(tmp_path: Path) -> None:
         assert tracker2.status == "interrupted"
 
 
+def test_run_tracker_multithreaded_safety(tmp_path: Path) -> None:
+    """RunTracker must operate safely inside child threads without crashing on signal registration."""
+    import threading
+
+    exp_dir = tmp_path / "experiments"
+    errors: list[Exception] = []
+
+    def worker() -> None:
+        try:
+            with RunTracker(experiment="thread_exp", run_name="worker_run", root_dir=exp_dir) as tracker:
+                tracker.log_metrics({"thread_loss": 0.42}, step=0)
+        except Exception as e:
+            errors.append(e)
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    thread.join()
+
+    assert len(errors) == 0, f"Thread raised unexpected errors: {errors}"
+    run_file = exp_dir / "thread_exp" / "worker_run" / "run.json"
+    assert run_file.exists()
+    meta = json.loads(run_file.read_text())
+    assert meta["status"] == "completed"
+
+
+def test_run_tracker_jsonl_line_by_line_validity(tmp_path: Path) -> None:
+    """Metrics file must be strictly valid JSON Lines where every single line parses cleanly."""
+    exp_dir = tmp_path / "experiments"
+    with RunTracker(experiment="jsonl_audit", run_name="audit_run", root_dir=exp_dir) as tracker:
+        for s in range(50):
+            tracker.log_metrics({"loss": 1.0 / (s + 1), "acc": s * 0.02, "lr": 1e-3}, step=s)
+
+    metrics_file = tracker.metrics_file
+    assert metrics_file.exists()
+
+    lines = [line.strip() for line in metrics_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(lines) == 150  # 3 metrics per step * 50 steps
+
+    for idx, line in enumerate(lines):
+        record = json.loads(line)
+        assert "name" in record
+        assert "value" in record
+        assert "step" in record
+        assert "timestamp" in record
+        assert isinstance(record["value"], (int, float))
+        assert isinstance(record["step"], int)
+
+
+
 

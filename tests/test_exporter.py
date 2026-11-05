@@ -12,24 +12,7 @@ from torch import nn
 from mangosta.artifacts import save_bundle
 from mangosta.core import ModelRegistry
 from mangosta.export import export_onnx
-from tests.conftest import DummyMLP
-
-
-class MultiOutputDictNet(nn.Module):
-    """Model matching the user's ParticleSizingNet pattern returning dictionary outputs."""
-
-    def __init__(self, in_features: int = 4) -> None:
-        super().__init__()
-        self.fc_mask = nn.Linear(in_features, 2)
-        self.fc_radius = nn.Linear(in_features, 1)
-        self.fc_gradient = nn.Linear(in_features, 1)
-
-    def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
-        return {
-            "semantic_mask": self.fc_mask(x),
-            "radius_map": self.fc_radius(x),
-            "gradient_map": self.fc_gradient(x),
-        }
+from tests.conftest import DummyMLP, MultiOutputDictNet
 
 
 def test_export_onnx_with_dict_output_mapping(tmp_path: Path) -> None:
