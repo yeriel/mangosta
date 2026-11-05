@@ -186,7 +186,7 @@ mi-proyecto/
   - Arnés Docker Ubuntu 24.04 aislado sin red (--network none) automatizado en scripts/test_offline.sh.
        │
        ▼
-[ Fase 3: Suite de Determinismo, CI & Benchmarks de Sobrecarga ]
+[ Fase 3: Suite de Determinismo, CI & Benchmarks de Sobrecarga ] [COMPLETADA]
   - Tests bit-a-bit, simulación de fallos/SIGINT, validación de schema pre-CUDA, benchmark de overhead < 0.5%.
        │
        ▼
@@ -253,15 +253,15 @@ mi-proyecto/
   - [x] Integrar script `scripts/test_offline.sh` para levantar el contenedor con `--network none`, ejecutar la suite completa y emitir reporte de auditoría en 1 comando.
   - [x] Documentar el procedimiento de auditoría en el README de testing.
 
-### Fase 3: Suite de Determinismo, CI y Benchmark de Rendimiento (Objetivo: v0.5.0-beta)
-- [ ] Implementar `tests/test_determinism.py`:
-  - [ ] Test bit-a-bit en CPU: 10 épocas continuas vs (5 épocas + checkpoint + reanudación + 5 épocas).
-  - [ ] Verificación de pérdida idéntica (`loss == loss`) y pesos (`torch.allclose(atol=0.0)`).
-- [ ] Implementar `tests/test_fault_tolerance.py`:
-  - [ ] Simulación de proceso interrumpido durante escritura de bundle y verificación de ausencia de archivos corruptos.
-  - [ ] Test de detección y reporte de bundles con pesos alterados o hashes inválidos.
-- [ ] Implementar `tests/test_performance_overhead.py`:
-  - [ ] Medición automatizada de latencia: verificar que `RunTracker` agrega menos del **0.5% de sobrecarga** al bucle de entrenamiento.
+### Fase 3: Suite de Determinismo, CI y Benchmark de Rendimiento (Objetivo: v0.5.0-beta) [COMPLETADA]
+- [x] Implementar `tests/test_determinism.py`:
+  - [x] Test bit-a-bit en CPU: 10 épocas continuas vs (5 épocas + checkpoint + reanudación + 5 épocas).
+  - [x] Verificación de pérdida idéntica (`loss == loss`) y pesos (`torch.allclose(atol=0.0)`).
+- [x] Implementar `tests/test_fault_tolerance.py`:
+  - [x] Simulación de proceso interrumpido durante escritura de bundle y verificación de ausencia de archivos corruptos.
+  - [x] Test de detección y reporte de bundles con pesos alterados o hashes inválidos.
+- [x] Implementar `tests/test_performance_overhead.py`:
+  - [x] Medición automatizada de latencia: verificar que `RunTracker` agrega menos del **0.5% de sobrecarga** al bucle de entrenamiento.
 
 ### Fase 3.5: Slim Serving en Producción, Contratos Estrictos y Bundle ONNX (Objetivo: v0.6.0)
 - [ ] **Desacoplar PyTorch en tiempo de importación (Lazy Imports):**

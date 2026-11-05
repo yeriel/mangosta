@@ -257,4 +257,4 @@ def resume_training(
             )
 
     except zipfile.BadZipFile as e:
-        raise BundleCorruptedError(f"Corrupted bundle archive: {bundle_path}") from e
+        raise BundleCorruptedError(f"Invalid or corrupted ZIP archive: {bundle_path}") from e
