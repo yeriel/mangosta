@@ -9,7 +9,6 @@ from pathlib import Path
 
 from mangosta.artifacts.bundle import read_bundle_manifest
 from mangosta.cli.init_project import init_project
-from mangosta.export.onnx import export_onnx
 from mangosta.tracking.report import generate_report
 from mangosta.tracking.viewer import start_viewer
 
@@ -202,6 +201,8 @@ def main() -> None:
             importlib.import_module(args.module)
 
         shape = tuple(args.input_shape) if args.input_shape else (1, 4)
+        from mangosta.export.onnx import export_onnx
+
         out = export_onnx(
             model_or_bundle=args.bundle,
             output_path=args.output,

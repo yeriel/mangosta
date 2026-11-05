@@ -1,0 +1,42 @@
+# ========================================================
+# STAGE 1: Build ONNX bundle using PyTorch exporter
+# ========================================================
+FROM python:3.12-slim AS builder
+
+WORKDIR /build
+
+RUN pip install --no-cache-dir \
+    --index-url https://download.pytorch.org/whl/cpu \
+    "torch>=2.0.0"
+
+RUN pip install --no-cache-dir \
+    "numpy>=2.0.0" \
+    "safetensors>=0.4.0" \
+    "pyyaml>=6.0" \
+    "packaging>=23.0" \
+    "onnx>=1.14.0"
+
+COPY . /build/mangosta
+RUN pip install --no-cache-dir -e /build/mangosta
+
+# Generate minimal test ONNX bundle
+RUN python3 /build/mangosta/docker/generate_test_bundle.py /build/test_bundle.onnx.bundle
+
+# ========================================================
+# STAGE 2: Ultra-Slim Zero-Torch Serving Runtime
+# ========================================================
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install ONLY serving dependencies (NumPy + ONNX Runtime + PyYAML) - ZERO PyTorch
+COPY . /app/mangosta
+RUN pip install --no-cache-dir "/app/mangosta[serving]"
+
+# Copy test bundle from builder
+COPY --from=builder /build/test_bundle.onnx.bundle /app/test_bundle.onnx.bundle
+
+# Copy verification script
+COPY docker/verify_slim_serving.py /app/verify_slim_serving.py
+
+CMD ["python3", "/app/verify_slim_serving.py"]

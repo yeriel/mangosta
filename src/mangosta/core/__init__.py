@@ -11,6 +11,7 @@ from mangosta.core.schema import (
     ModelSchema,
     TensorSpec,
     infer_schema,
+    infer_schema_from_sample,
 )
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "TensorSpec",
     "ModelSchema",
     "infer_schema",
+    "infer_schema_from_sample",
 ]

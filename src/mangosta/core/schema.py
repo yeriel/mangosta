@@ -1,30 +1,61 @@
-"""Input/Output schema inference and tensor signature validation for PyTorch models."""
+"""Input/Output schema inference and tensor signature validation for PyTorch and NumPy."""
 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from typing import Any, Mapping
 
-import torch
-import torch.nn as nn
+try:
+    import torch
+    import torch.nn as nn
+
+    HAS_TORCH = True
+except ImportError:
+    torch = None  # type: ignore[assignment]
+    nn = None  # type: ignore[assignment]
+    HAS_TORCH = False
+
+try:
+    import numpy as np
+
+    HAS_NUMPY = True
+except ImportError:
+    np = None  # type: ignore[assignment]
+    HAS_NUMPY = False
 
 from mangosta.exceptions import SchemaValidationError
 
 
-def _normalize_dtype(dtype: torch.dtype | str) -> str:
-    """Normalize a torch dtype or string representation into a canonical string."""
-    if isinstance(dtype, torch.dtype):
-        return str(dtype).replace("torch.", "")
-    s = str(dtype).strip().lower()
+def _normalize_dtype(dtype: Any) -> str:
+    """Normalize a torch dtype, numpy dtype, or string representation into a canonical string."""
+    if hasattr(dtype, "name"):
+        # numpy dtype has .name like 'float32', 'int64'
+        s = str(dtype.name)
+    else:
+        s = str(dtype).strip()
+    s = s.lower()
     if s.startswith("torch."):
+        s = s[6:]
+    if s.startswith("numpy."):
         s = s[6:]
     return s
 
 
-def _get_torch_dtype(dtype_str: str) -> torch.dtype | None:
+def _get_torch_dtype(dtype_str: str) -> Any:
     """Resolve a string to a torch.dtype if possible."""
+    if not HAS_TORCH or torch is None:
+        return None
     norm = _normalize_dtype(dtype_str)
     return getattr(torch, norm, None)
+
+
+def _is_tensor_or_ndarray(obj: Any) -> bool:
+    """Check if an object is a PyTorch Tensor, NumPy ndarray, or array-like object."""
+    if HAS_TORCH and torch is not None and isinstance(obj, torch.Tensor):
+        return True
+    if HAS_NUMPY and np is not None and isinstance(obj, np.ndarray):
+        return True
+    return hasattr(obj, "shape") and hasattr(obj, "dtype")
 
 
 @dataclass
@@ -41,14 +72,17 @@ class TensorSpec:
         self.shape = [None if (dim is None or dim == -1) else int(dim) for dim in self.shape]
 
     def matches(
-        self, tensor: torch.Tensor, allow_batch_dynamic: bool = True
+        self, tensor: Any, allow_batch_dynamic: bool = True
     ) -> tuple[bool, str | None]:
-        """Check if a tensor matches this specification.
+        """Check if a tensor or numpy array matches this specification.
 
         Returns (is_match, error_message).
         """
-        if not isinstance(tensor, torch.Tensor):
-            return False, f"Expected torch.Tensor for '{self.name}', got {type(tensor).__name__}"
+        if not _is_tensor_or_ndarray(tensor):
+            return (
+                False,
+                f"Expected torch.Tensor or numpy.ndarray for '{self.name}', got {type(tensor).__name__}",
+            )
 
         actual_dtype = _normalize_dtype(tensor.dtype)
         if actual_dtype != self.dtype:
@@ -124,9 +158,9 @@ class ModelSchema:
         direction: str,
     ) -> None:
         if expected_structure == "tensor":
-            if not isinstance(data, torch.Tensor):
+            if not _is_tensor_or_ndarray(data):
                 raise SchemaValidationError(
-                    f"{direction} must be a torch.Tensor, got {type(data).__name__}"
+                    f"{direction} must be a torch.Tensor or numpy.ndarray, got {type(data).__name__}"
                 )
             spec = specs[0] if isinstance(specs, list) else list(specs.values())[0]
             ok, err = spec.matches(data)
@@ -213,7 +247,7 @@ class ModelSchema:
 
 
 def _spec_from_tensor(
-    tensor: torch.Tensor, name: str = "tensor", dynamic_batch_dim: int | None = 0
+    tensor: Any, name: str = "tensor", dynamic_batch_dim: int | None = 0
 ) -> TensorSpec:
     shape: list[int | None] = list(tensor.shape)
     if dynamic_batch_dim is not None and len(shape) > dynamic_batch_dim:
@@ -221,8 +255,68 @@ def _spec_from_tensor(
     return TensorSpec(name=name, shape=shape, dtype=_normalize_dtype(tensor.dtype))
 
 
+def infer_schema_from_sample(
+    sample_input: Any,
+    sample_output: Any,
+    dynamic_batch_dim: int | None = 0,
+) -> ModelSchema:
+    """Infer a ModelSchema contract directly from sample input and output data (PyTorch or NumPy)."""
+    # Determine input structure and specs
+    if _is_tensor_or_ndarray(sample_input):
+        input_structure = "tensor"
+        inputs: list[TensorSpec] | dict[str, TensorSpec] = [
+            _spec_from_tensor(sample_input, name="input", dynamic_batch_dim=dynamic_batch_dim)
+        ]
+    elif isinstance(sample_input, (list, tuple)):
+        input_structure = "sequence"
+        inputs = [
+            _spec_from_tensor(t, name=f"input_{i}", dynamic_batch_dim=dynamic_batch_dim)
+            for i, t in enumerate(sample_input)
+        ]
+    elif isinstance(sample_input, Mapping):
+        input_structure = "mapping"
+        inputs = {
+            k: _spec_from_tensor(v, name=k, dynamic_batch_dim=dynamic_batch_dim)
+            for k, v in sample_input.items()
+        }
+    else:
+        raise TypeError(
+            f"sample_input must be a Tensor, Sequence, or Mapping, got {type(sample_input).__name__}"
+        )
+
+    # Determine output structure and specs
+    if _is_tensor_or_ndarray(sample_output):
+        output_structure = "tensor"
+        outputs: list[TensorSpec] | dict[str, TensorSpec] = [
+            _spec_from_tensor(sample_output, name="output", dynamic_batch_dim=dynamic_batch_dim)
+        ]
+    elif isinstance(sample_output, (list, tuple)):
+        output_structure = "sequence"
+        outputs = [
+            _spec_from_tensor(t, name=f"output_{i}", dynamic_batch_dim=dynamic_batch_dim)
+            for i, t in enumerate(sample_output)
+        ]
+    elif isinstance(sample_output, Mapping):
+        output_structure = "mapping"
+        outputs = {
+            k: _spec_from_tensor(v, name=k, dynamic_batch_dim=dynamic_batch_dim)
+            for k, v in sample_output.items()
+        }
+    else:
+        raise TypeError(
+            f"sample_output must be a Tensor, Sequence, or Mapping, got {type(sample_output).__name__}"
+        )
+
+    return ModelSchema(
+        inputs=inputs,
+        outputs=outputs,
+        input_structure=input_structure,
+        output_structure=output_structure,
+    )
+
+
 def infer_schema(
-    model: nn.Module,
+    model: Any,
     sample_input: Any,
     dynamic_batch_dim: int | None = 0,
 ) -> ModelSchema:
@@ -240,6 +334,15 @@ def infer_schema(
     Returns:
         A ModelSchema object representing the model's signature contract.
     """
+    if not HAS_TORCH or torch is None or nn is None:
+        raise ImportError(
+            "infer_schema requires PyTorch to inspect nn.Module. "
+            "For inspecting sample arrays without PyTorch, use infer_schema_from_sample()."
+        )
+
+    if not isinstance(model, nn.Module):
+        raise TypeError(f"model must be a torch.nn.Module, got {type(model).__name__}")
+
     was_training = model.training
     model.eval()
 

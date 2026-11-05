@@ -190,7 +190,7 @@ mi-proyecto/
   - Tests bit-a-bit, simulación de fallos/SIGINT, validación de schema pre-CUDA, benchmark de overhead < 0.5%.
        │
        ▼
-[ Fase 3.5: Slim Serving en Producción, Contratos Estrictos & Bundle ONNX ]
+[ Fase 3.5: Slim Serving en Producción, Contratos Estrictos & Bundle ONNX ] [COMPLETADA]
   - Desacoplamiento de Torch en importación (Lazy Imports).
   - Formato ONNX Bundle: ZIP con model.onnx + manifest.json (contrato ModelSchema intacto).
   - Runtime ONNXRunner / load_bundle sin PyTorch (solo onnxruntime + numpy).
@@ -263,26 +263,26 @@ mi-proyecto/
 - [x] Implementar `tests/test_performance_overhead.py`:
   - [x] Medición automatizada de latencia: verificar que `RunTracker` agrega menos del **0.5% de sobrecarga** al bucle de entrenamiento.
 
-### Fase 3.5: Slim Serving en Producción, Contratos Estrictos y Bundle ONNX (Objetivo: v0.6.0)
-- [ ] **Desacoplar PyTorch en tiempo de importación (Lazy Imports):**
-  - [ ] Permitir que `import mangosta` y los módulos de inferencia funcionen en entornos de producción donde `torch` no está instalado (solo `numpy` y `onnxruntime`).
-  - [ ] Aislar las dependencias pesadas de entrenamiento (`torch`, `safetensors.torch`) para que no bloqueen el despliegue de microservicios ligeros.
-- [ ] **Formato de Empaquetado ONNX Bundle (`.onnx.bundle` / ZIP con `model.onnx`):**
-  - [ ] Extender `export_onnx(..., as_bundle=True, output_path=...)` para producir un bundle de producción autónomo que contenga:
+### Fase 3.5: Slim Serving en Producción, Contratos Estrictos y Bundle ONNX (Objetivo: v0.6.0) [COMPLETADA]
+- [x] **Desacoplar PyTorch en tiempo de importación (Lazy Imports):**
+  - [x] Permitir que `import mangosta` y los módulos de inferencia funcionen en entornos de producción donde `torch` no está instalado (solo `numpy` y `onnxruntime`).
+  - [x] Aislar las dependencias pesadas de entrenamiento (`torch`, `safetensors.torch`) para que no bloqueen el despliegue de microservicios ligeros.
+- [x] **Formato de Empaquetado ONNX Bundle (`.onnx.bundle` / ZIP con `model.onnx`):**
+  - [x] Extender `export_onnx(..., as_bundle=True, output_path=...)` para producir un bundle de producción autónomo que contenga:
     - `model.onnx`: Grafo computacional y pesos optimizados para inferencia.
     - `manifest.json`: Metadatos, hash criptográfico SHA-256 de `model.onnx` y el contrato formal `schema` (`ModelSchema`).
     - `config.yaml`: Parámetros de pre/post-procesamiento si se suministran.
-  - [ ] Auditoría de integridad criptográfica: verificar el SHA-256 de `model.onnx` antes de instanciar el runtime.
-- [ ] **Runtime de Producción `ONNXRunner` / Carga Slim con `load_bundle`:**
-  - [ ] Permitir `load_bundle("modelo.onnx.bundle")` o instanciar `ONNXRunner("modelo.onnx")` en entornos con solo `numpy` y `onnxruntime`.
-  - [ ] **Enforcement estricto del contrato de datos:** Validar arrays de NumPy contra `ModelSchema` (shapes, dtypes, nombres de variables) antes de llamar a `session.run()`, emitiendo errores auto-accionables si la entrada es inválida.
-  - [ ] Devolver objeto `LoadedONNXBundle` con interfaz uniforme `.predict(numpy_array_o_dict)` idéntica al modelo de PyTorch.
-- [ ] **Perfiles de Instalación y Empaquetado en `pyproject.toml`:**
-  - [ ] Declarar extra `[project.optional-dependencies]`:
+  - [x] Auditoría de integridad criptográfica: verificar el SHA-256 de `model.onnx` antes de instanciar el runtime.
+- [x] **Runtime de Producción `ONNXRunner` / Carga Slim con `load_bundle`:**
+  - [x] Permitir `load_bundle("modelo.onnx.bundle")` o instanciar `ONNXRunner("modelo.onnx")` en entornos con solo `numpy` y `onnxruntime`.
+  - [x] **Enforcement estricto del contrato de datos:** Validar arrays de NumPy contra `ModelSchema` (shapes, dtypes, nombres de variables) antes de llamar a `session.run()`, emitiendo errores auto-accionables si la entrada es inválida.
+  - [x] Devolver objeto `LoadedONNXBundle` con interfaz uniforme `.predict(numpy_array_o_dict)` idéntica al modelo de PyTorch.
+- [x] **Perfiles de Instalación y Empaquetado en `pyproject.toml`:**
+  - [x] Declarar extra `[project.optional-dependencies]`:
     - `serving = ["numpy>=2.0.0", "onnxruntime>=1.16.0", "pyyaml>=6.0", "packaging>=23.0"]`
-- [ ] **Validación en Contenedor Docker Ultra-Slim (`python:3.12-slim`):**
-  - [ ] Crear Dockerfile de validación de serving con solo `pip install mangosta[serving]` (sin PyTorch).
-  - [ ] Verificar que carga el bundle ONNX, valida contratos y ejecuta inferencia con una imagen Docker menor a 150 MB.
+- [x] **Validación en Contenedor Docker Ultra-Slim (`python:3.12-slim`):**
+  - [x] Crear Dockerfile de validación de serving con solo `pip install mangosta[serving]` (sin PyTorch).
+  - [x] Verificar que carga el bundle ONNX, valida contratos y ejecuta inferencia con una imagen Docker minimalista y sin dependencias de PyTorch.
 
 ### Fase 4: Congelamiento de API, CLI Machine-Readable, Documentación y Release Estable (Objetivo: v1.0.0)
 - [ ] Actualizar `mangosta inspect <bundle>` en `src/mangosta/cli/main.py`:

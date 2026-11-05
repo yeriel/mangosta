@@ -14,9 +14,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import safetensors.torch
-import torch
-import torch.nn as nn
+try:
+    import safetensors.torch
+    import torch
+    import torch.nn as nn
+
+    HAS_TORCH = True
+except ImportError:
+    safetensors = None  # type: ignore[assignment]
+    torch = None  # type: ignore[assignment]
+    nn = None  # type: ignore[assignment]
+    HAS_TORCH = False
+
 import yaml
 
 from mangosta.core.schema import ModelSchema, infer_schema
@@ -25,6 +34,9 @@ from mangosta.exceptions import BundleCorruptedError
 
 def _capture_rng_states() -> dict[str, Any]:
     """Capture comprehensive RNG states across Torch (CPU and CUDA), Python random, and NumPy."""
+    if not HAS_TORCH or torch is None:
+        return {}
+
     rng: dict[str, Any] = {
         "torch_cpu": torch.get_rng_state(),
         "python_random": random.getstate(),
@@ -50,18 +62,19 @@ def _restore_rng_states(rng_states: dict[str, Any]) -> None:
     if not isinstance(rng_states, dict):
         return
 
-    if "torch_cpu" in rng_states and rng_states["torch_cpu"] is not None:
-        torch.set_rng_state(rng_states["torch_cpu"])
+    if HAS_TORCH and torch is not None:
+        if "torch_cpu" in rng_states and rng_states["torch_cpu"] is not None:
+            torch.set_rng_state(rng_states["torch_cpu"])
 
-    if (
-        "torch_cuda" in rng_states
-        and rng_states["torch_cuda"] is not None
-        and torch.cuda.is_available()
-    ):
-        try:
-            torch.cuda.set_rng_state_all(rng_states["torch_cuda"])
-        except Exception:
-            pass
+        if (
+            "torch_cuda" in rng_states
+            and rng_states["torch_cuda"] is not None
+            and torch.cuda.is_available()
+        ):
+            try:
+                torch.cuda.set_rng_state_all(rng_states["torch_cuda"])
+            except Exception:
+                pass
 
     if "python_random" in rng_states and rng_states["python_random"] is not None:
         random.setstate(rng_states["python_random"])
@@ -77,7 +90,7 @@ def _restore_rng_states(rng_states: dict[str, Any]) -> None:
 
 def save_bundle(
     output_path: str | Path,
-    model: nn.Module,
+    model: Any,
     family: str | None = None,
     version: str = "0.1.0",
     init_args: dict[str, Any] | None = None,
@@ -103,6 +116,10 @@ def save_bundle(
     - Training state: If ``optimizer``, ``scheduler``, or ``scaler`` is provided,
       the bundle is automatically marked and packed with training state for resumption.
     """
+    if not HAS_TORCH or torch is None or safetensors is None:
+        raise ImportError(
+            "save_bundle requires PyTorch and SafeTensors. Please install torch and safetensors: `pip install torch safetensors`"
+        )
     dest = Path(output_path).resolve()
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp_dest = dest.with_name(f"{dest.name}.tmp_{os.getpid()}_{uuid.uuid4().hex[:6]}")

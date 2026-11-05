@@ -10,9 +10,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
-import safetensors.torch
-import torch
-import torch.nn as nn
+try:
+    import safetensors.torch
+    import torch
+    import torch.nn as nn
+
+    HAS_TORCH = True
+except ImportError:
+    safetensors = None  # type: ignore[assignment]
+    torch = None  # type: ignore[assignment]
+    nn = None  # type: ignore[assignment]
+    HAS_TORCH = False
+
 import yaml
 
 from mangosta.artifacts.bundle import _restore_rng_states
@@ -36,14 +45,15 @@ class LoadedBundle:
 
     def __init__(
         self,
-        model: nn.Module,
+        model: Any,
         manifest: dict[str, Any],
         schema: ModelSchema | None = None,
         config: dict[str, Any] | str | None = None,
         bundle_path: Path | None = None,
     ) -> None:
         self.model = model
-        self.model.eval()
+        if hasattr(self.model, "eval"):
+            self.model.eval()
         self.manifest = manifest
         self.schema = schema
         self.config = config
@@ -66,10 +76,18 @@ class LoadedBundle:
         if validate and self.schema is not None:
             self.schema.validate_input(input_data)
 
-        with torch.inference_mode():
-            if isinstance(input_data, torch.Tensor):
-                output = self.model(input_data)
-            elif isinstance(input_data, (list, tuple)):
+        if HAS_TORCH and torch is not None:
+            with torch.inference_mode():
+                if isinstance(input_data, torch.Tensor):
+                    output = self.model(input_data)
+                elif isinstance(input_data, (list, tuple)):
+                    output = self.model(*input_data)
+                elif isinstance(input_data, Mapping):
+                    output = self.model(**input_data)
+                else:
+                    output = self.model(input_data)
+        else:
+            if isinstance(input_data, (list, tuple)):
                 output = self.model(*input_data)
             elif isinstance(input_data, Mapping):
                 output = self.model(**input_data)
@@ -119,12 +137,13 @@ def _load_and_verify_weights(
 
 def load_bundle(
     bundle_path: str | Path,
-    map_location: str | torch.device = "cpu",
-    model: nn.Module | None = None,
-) -> LoadedBundle:
-    """Universal loader that reconstructs the architecture from the registry and restores weights.
+    map_location: Any = "cpu",
+    model: Any = None,
+) -> Any:
+    """Universal loader that reconstructs the architecture from the registry or loads an ONNX bundle.
 
-    If `model` is not provided, the architecture is dynamically reconstructed
+    If the bundle is an ONNX bundle (.onnx.bundle), it returns a LoadedONNXBundle without requiring PyTorch.
+    If `model` is not provided for PyTorch bundles, the architecture is dynamically reconstructed
     using the model family, version, and init_args stored in manifest.json.
     """
     path = Path(bundle_path).resolve()
@@ -139,6 +158,19 @@ def load_bundle(
 
             manifest_data = zf.read("manifest.json")
             manifest = json.loads(manifest_data.decode("utf-8"))
+
+            # Check if this is an ONNX bundle (weights_format == 'onnx' or model.onnx present)
+            if manifest.get("weights_format") == "onnx" or "model.onnx" in namelist:
+                from mangosta.serving.runner import load_onnx_bundle
+
+                return load_onnx_bundle(path)
+
+            if not HAS_TORCH or torch is None or nn is None:
+                raise ImportError(
+                    "Loading PyTorch SafeTensors bundles requires PyTorch.\n"
+                    "Please install torch (`pip install torch`) or export the model as an ONNX bundle "
+                    "for zero-PyTorch slim serving."
+                )
 
             config: dict[str, Any] | str | None = None
             if "config.yaml" in namelist:
@@ -190,18 +222,22 @@ def load_bundle(
 
 def resume_training(
     bundle_path: str | Path,
-    model: nn.Module,
+    model: Any,
     optimizer: Any | None = None,
     scheduler: Any | None = None,
     scaler: Any | None = None,
     restore_rng: bool = True,
-    map_location: str | torch.device = "cpu",
+    map_location: Any = "cpu",
 ) -> ResumeState:
     """Restore the complete training state from a fault-tolerant checkpoint bundle.
 
     Loads model weights, optimizer state, scheduler state, GradScaler state,
     and restores exact RNG generator states.
     """
+    if not HAS_TORCH or torch is None:
+        raise ImportError(
+            "resume_training requires PyTorch. Please install torch: pip install torch"
+        )
     path = Path(bundle_path).resolve()
     if not path.is_file():
         raise FileNotFoundError(f"Bundle file not found: {bundle_path}")

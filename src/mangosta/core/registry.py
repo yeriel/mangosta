@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from typing import Any, Callable, TypeVar
 
-import torch.nn as nn
+try:
+    import torch.nn as nn
+
+    HAS_TORCH = True
+except ImportError:
+    nn = None  # type: ignore[assignment]
+    HAS_TORCH = False
+
 from packaging.version import InvalidVersion, Version
 
 from mangosta.exceptions import (
@@ -13,14 +20,17 @@ from mangosta.exceptions import (
     RegistryCollisionError,
 )
 
-T = TypeVar("T", bound=type[nn.Module])
+if HAS_TORCH and nn is not None:
+    T = TypeVar("T", bound=type[nn.Module])
+else:
+    T = TypeVar("T", bound=Any)  # type: ignore[misc]
 C = TypeVar("C", bound=Any)
 
 
 class ModelRegistry:
     """Thread-safe catalog for neural network architectures and auxiliary components."""
 
-    _models: dict[tuple[str, str], type[nn.Module]] = {}
+    _models: dict[tuple[str, str], Any] = {}
     _components: dict[tuple[str, str], Any] = {}
 
     @classmethod
@@ -28,10 +38,14 @@ class ModelRegistry:
         cls,
         family: str,
         version: str,
-        model_cls: type[nn.Module],
+        model_cls: Any,
         allow_override: bool = False,
     ) -> None:
         """Register a model architecture class under a family and version."""
+        if not HAS_TORCH or nn is None:
+            raise ImportError(
+                "register_model requires PyTorch. Please install torch: pip install torch"
+            )
         if not issubclass(model_cls, nn.Module):
             raise TypeError(f"Registered model must inherit from torch.nn.Module, got {model_cls}")
 
@@ -44,7 +58,7 @@ class ModelRegistry:
         cls._models[key] = model_cls
 
     @classmethod
-    def get_model_cls(cls, family: str, version: str | None = None) -> tuple[type[nn.Module], str]:
+    def get_model_cls(cls, family: str, version: str | None = None) -> tuple[Any, str]:
         """Look up a model class.
 
         If version is omitted or None, resolves the highest SemVer available.
@@ -73,7 +87,7 @@ class ModelRegistry:
         return cls._models[(family_clean, resolved_version)], resolved_version
 
     @classmethod
-    def build(cls, family: str, version: str | None = None, **init_args: Any) -> nn.Module:
+    def build(cls, family: str, version: str | None = None, **init_args: Any) -> Any:
         """Dynamically instantiate a model registered under family and version."""
         model_cls, resolved_version = cls.get_model_cls(family, version)
         try:

@@ -8,13 +8,16 @@ import sys
 import zipfile
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 
 from mangosta.artifacts import load_bundle, resume_training, save_bundle
 from mangosta.artifacts.bundle import read_bundle_manifest
-from mangosta.exceptions import BundleCorruptedError
+from mangosta.exceptions import BundleCorruptedError, SchemaValidationError
+from mangosta.export import export_onnx
+from mangosta.serving import LoadedONNXBundle, ONNXRunner
 from mangosta.tracking import RunTracker, quick_track
 
 
@@ -172,6 +175,49 @@ def verify_tracker_streaming_and_interrupt(tmp_dir: Path) -> None:
     print("  ✓ KeyboardInterrupt / SIGINT cleanly marks status as 'interrupted'.")
 
 
+def verify_onnx_bundle_serving(tmp_dir: Path) -> None:
+    print("[5/6] Testing ONNX bundle packaging, loading, and schema contract serving...")
+    model = SampleNet(8, 16, 2)
+    model.eval()
+    sample_input = torch.randn(1, 8)
+    bundle_path = tmp_dir / "offline_sample.onnx.bundle"
+
+    export_onnx(
+        model_or_bundle=model,
+        output_path=bundle_path,
+        sample_input=sample_input,
+        as_bundle=True,
+    )
+    assert bundle_path.exists(), "ONNX bundle was not created."
+
+    manifest = read_bundle_manifest(bundle_path)
+    assert manifest["weights_format"] == "onnx"
+    assert "model_sha256" in manifest
+    print(f"  ✓ ONNX bundle created with model.onnx. SHA-256: {manifest['model_sha256'][:16]}...")
+
+    # Load bundle
+    loaded = load_bundle(bundle_path)
+    assert isinstance(loaded, LoadedONNXBundle)
+
+    # Inexact / bad shape input must be rejected by contract
+    bad_x = np.random.randn(2, 10).astype(np.float32)
+    contract_rejected = False
+    try:
+        loaded.predict(bad_x)
+    except SchemaValidationError:
+        contract_rejected = True
+    assert contract_rejected, "Schema violation was not rejected!"
+    print("  ✓ Strict schema contract rejected malformed NumPy input before execution.")
+
+    # Valid inference test
+    np_x = np.random.randn(4, 8).astype(np.float32)
+    onnx_out = loaded.predict(np_x)
+    with torch.inference_mode():
+        torch_out = model(torch.from_numpy(np_x)).numpy()
+    np.testing.assert_allclose(onnx_out, torch_out, atol=1e-5)
+    print("  ✓ ONNX prediction closely matches PyTorch forward pass (atol=1e-5).")
+
+
 def main() -> None:
     print("=" * 60)
     print("STARTING MANGOSTA OFFLINE SERVER VALIDATION (UBUNTU 24.04)")
@@ -185,8 +231,9 @@ def main() -> None:
     verify_bundle_safetensors_and_integrity(work_dir)
     verify_checkpoint_resume_exact_continuity(work_dir)
     verify_tracker_streaming_and_interrupt(work_dir)
+    verify_onnx_bundle_serving(work_dir)
 
-    print("[5/5] Running complete unit test suite with pytest...")
+    print("[6/6] Running complete unit test suite with pytest...")
     import pytest
     code = pytest.main(["-v", "tests"])
     assert code == 0, f"pytest tests failed with exit code {code}"

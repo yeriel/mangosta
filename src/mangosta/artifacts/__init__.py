@@ -12,12 +12,14 @@ from mangosta.artifacts.loader import (
     load_bundle,
     resume_training,
 )
+from mangosta.serving.runner import LoadedONNXBundle
 
 __all__ = [
     "save_bundle",
     "load_bundle",
     "read_bundle_manifest",
     "LoadedBundle",
+    "LoadedONNXBundle",
     "ResumeState",
     "resume_training",
 ]
