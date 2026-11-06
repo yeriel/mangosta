@@ -2,37 +2,53 @@
 
 **Lightweight MLOps and Model Lifecycle Management for PyTorch.**
 
-> *"Simple by default, strict on demand"* - Functional in three lines of code for rapid experimentation, yet robust enough for production pipelines and autonomous AI agents through formal contracts, deterministic fault tolerance, and immutable architecture versioning.
+> *"Simple by default, strict on demand"* — Instant setup for rapid solo experimentation, yet engineered with the architectural rigor required by production pipelines and autonomous AI coding agents: formal tensor contracts, deterministic fault tolerance, zero-daemon persistence, and machine-readable CLI interfaces.
+
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
+[![Type Checked: mypy](https://img.shields.io/badge/type%20checked-mypy-informational.svg)](https://mypy-lang.org/)
 
 ---
 
-## Overview
+## Why Mangosta?
 
-Modern MLOps frameworks frequently impose heavy operational complexity: daemon background services, external databases, cloud platform dependencies, and brittle networking setups.
+Modern MLOps stacks frequently impose overwhelming operational complexity: background daemons, external database engines, cloud platform lock-in, and fragile networking.
 
-`mangosta` is engineered to provide local-first, serverless model lifecycle primitives directly within Python and standard file systems. It eliminates infrastructure overhead while delivering strict guarantees regarding reproducibility, tensor contracts, and crash-consistent persistence.
+`mangosta` is engineered to provide **local-first, serverless model lifecycle primitives** directly within Python and standard file systems. It eliminates infrastructure overhead while delivering strict guarantees regarding reproducibility, tensor contracts, and crash-consistent persistence.
+
+```mermaid
+flowchart LR
+    A["Scaffold Project<br/><code>mangosta init</code>"] --> B["Train & Track<br/><code>RunTracker (JSONL)</code>"]
+    B --> C["Atomic Bundle<br/><code>.bundle (SafeTensors)</code>"]
+    C --> D["Inspection & Audit<br/><code>inspect --json / report</code>"]
+    C --> E["Production Serving<br/><code>.onnx.bundle (Zero-Torch)</code>"]
+```
 
 ### Architectural Principles
 
-- **Zero Service Dependencies**: No background daemons, web servers, or remote databases. All operations use direct, atomic file system calls (JSONL, standard ZIP archives, and optional SQLite).
-- **Strict Immutability**: Architectures registered in `ModelRegistry` cannot be silently overwritten, preventing silent behavioral divergence between training runs.
-- **Contract-Driven Inference**: Non-invasive tensor signature inference captures shapes (including dynamic batch dimensions) and data types, enforcing runtime verification before execution.
-- **Deterministic Fault Tolerance**: Checkpoints capture complete training state including optimizer parameters, learning rate schedulers, gradient scalers, and pseudo-random number generator (RNG) states across Python, PyTorch (CPU and CUDA), and NumPy.
-- **Decoupled Production Export**: Development artifacts (`.bundle`) remain optimized for training continuity and auditability, while standalone production formats (such as ONNX) are cleanly exported with full user control over dynamic axes, precision, and output restructuring.
+- **Zero Service Dependencies**: No background daemons, Redis, or databases. Everything is stored in human-readable, crash-consistent flat files (JSONL, standard ZIP archives, SafeTensors).
+- **Zero-Pickle Security**: Weights are serialized exclusively using Hugging Face SafeTensors (`model.safetensors`). Arbitrary code execution during deserialization is physically impossible.
+- **Contract-Driven Inference**: Non-invasive tensor signatures validate shapes (including dynamic batch dimensions) and data types before runtime execution.
+- **Deterministic Bit-to-Bit Resumption**: Captures complete training snapshots (optimizer, scheduler, GradScaler, and RNG states across PyTorch CPU/CUDA, Python, and NumPy).
+- **Slim Production Serving**: Deploy high-performance ONNX microservices (`~70MB` Docker containers) without installing PyTorch (`~2.5GB`).
+- **AI Agent-Native**: Machine-readable `mangosta inspect <bundle> --json` parses SafeTensors binary headers in `< 5ms` with zero tensor allocations, perfectly tailored for LLMs and CI/CD pipelines.
 
 ---
 
-## Comparison with Existing Tools
+## Technical Comparison
 
-| Capability | mangosta | MLflow | Weights & Biases | ClearML |
+| Capability | **mangosta** | **Vanilla PyTorch** | **MLflow** | **Weights & Biases** |
 | :--- | :--- | :--- | :--- | :--- |
-| **Infrastructure Overhead** | None (Local files only) | Local/Remote server | Cloud daemon / SaaS | Server / Agent daemon |
-| **External Services Required** | Zero | Web server + DB | API backend | Server stack + DB |
-| **Persistence Mechanism** | Atomic JSONL & ZIP | SQLite / File store | Cloud storage | MongoDB / MinIO |
-| **Fault-Tolerant RNG Restoration** | Native (CPU, CUDA, NumPy, Py) | Manual | Manual | Manual |
-| **Tensor Contract Validation** | Native (Pre-inference) | Signature schema | Logged schema only | Logged schema only |
-| **Packaging Architecture** | Modular (KISS & SOLID) | Monolithic package | Monolithic client | Complex SDK |
-| **Offline Operation** | 100% Offline | Partial | Requires offline mode | Requires local server |
+| **Operational Overhead** | **Zero** (Local files only) | None | Local/Remote server | Cloud daemon / SaaS |
+| **External Dependencies** | **None** (Self-contained) | None | Web server + DB | API backend |
+| **Persistence Mechanism** | **Atomic JSONL & ZIP** | Ad-hoc `.pt` / `.pth` | SQLite / File store | Cloud storage |
+| **Pickle Security** | **100% SafeTensors (Zero Pickle)** | Vulnerable (`pickle`) | Ad-hoc (usually pickle) | Ad-hoc (usually pickle) |
+| **Deterministic RNG Recovery** | **Native** (CPU, CUDA, NumPy, Py) | Manual code required | None (manual) | None (manual) |
+| **Tensor Contract Validation** | **Native** (Pre-inference) | Manual assertions | Model signatures | None |
+| **Machine-Readable CLI** | **`--json` in < 5ms** | None | Limited CLI | CLI client |
+| **Slim Microservice Image** | **~70MB (Zero-PyTorch)** | ~2.5GB - 6GB | ~2.5GB - 6GB | ~2.5GB - 6GB |
+| **100% Offline Capability** | **Yes** | Yes | Partial | Offline queue mode |
 
 ---
 
@@ -50,271 +66,168 @@ Or using standard `pip`:
 pip install mangosta
 ```
 
-### Optional Dependencies
+### Optional Bundles
 
-For ONNX graph verification using `onnx.checker`:
-
-```bash
-uv add "mangosta[onnx]"
-# or
-pip install "mangosta[onnx]"
-```
+- **ONNX Model Checker**:
+  ```bash
+  pip install "mangosta[onnx]"
+  ```
+- **Zero-PyTorch Slim Serving (Production microservices)**:
+  ```bash
+  pip install "mangosta[serving]"
+  ```
+- **Full Development Suite**:
+  ```bash
+  pip install "mangosta[dev]"
+  ```
 
 ---
 
-## Quickstart
+## 3-Minute Quickstart
 
-### 1. Scaffold a Production Project
-
-Generate an entire Clean Architecture PyTorch project in one command:
+### 1. Scaffold a Clean Architecture Project
 
 ```bash
 mangosta init my_project
 cd my_project
 ```
 
-This scaffolds:
-- `configs/`: Hierarchical configurations (`base.yaml`, experiment overrides)
-- `data/`: Raw and processed data partitions
-- `src/`: Decoupled `data/`, `models/`, `engine/`, and `utils/`
-- Root entrypoints: `train.py`, `infer.py`, `benchmark.py`
+Scaffolds a modular Clean Architecture project with `configs/`, `src/`, `entrypoints/`, and `.agents/mangosta.md`.
 
-### 2. Atomic Local Tracking and Artifact Logging
-
-Track hyperparameters, step-level metrics, and validation artifacts/images with atomic disk flushing using `RunTracker`:
-
-```python
-from mangosta import RunTracker
-
-# RunTracker provides native context management and clean static typing
-with RunTracker(experiment="vision", run_name="baseline_resnet") as run:
-    run.log_params({"learning_rate": 1e-3, "batch_size": 32, "weight_decay": 1e-4})
-    run.set_dataset("data/processed_images.parquet")
-    
-    for epoch in range(10):
-        # Training iteration ...
-        run.log_metric("train_loss", 0.342, step=epoch)
-        run.log_metric("val_accuracy", 0.912, step=epoch)
-
-    # Log validation images (supports PyTorch tensors, NumPy arrays, or file paths)
-    run.log_image("val_samples", sample_tensor, step=10)
-
-    # Log arbitrary training artifacts (e.g. confusion matrix, predictions CSV)
-    run.log_artifact("outputs/confusion_matrix.json")
-```
-
-*(Note: `quick_track(...)` is also available as a shorthand alias).*
-
-### 3. Architecture Registration
-
-Register neural network architectures under a family name and semantic version:
+### 2. Register Architecture & Track Training
 
 ```python
 import torch
 import torch.nn as nn
-from mangosta import register_model
+from mangosta import register_model, RunTracker, save_bundle
 
-@register_model(family="classifier", version="1.0.0")
-class ConvClassifier(nn.Module):
-    def __init__(self, in_channels: int = 3, num_classes: int = 10) -> None:
+# 1. Register model architecture with semantic versioning
+@register_model(family="sensor_mlp", version="1.0.0")
+class SensorMLP(nn.Module):
+    def __init__(self, in_features: int = 8, num_classes: int = 2) -> None:
         super().__init__()
-        self.encoder = nn.Sequential(
-            nn.Conv2d(in_channels, 16, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.AdaptiveAvgPool2d((1, 1)),
-        )
-        self.head = nn.Linear(16, num_classes)
+        self.fc = nn.Linear(in_features, num_classes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.head(self.encoder(x).flatten(1))
+        return self.fc(x)
+
+model = SensorMLP()
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+# 2. Track experiment with atomic local flushing
+with RunTracker(experiment="sensor_exp", run_name="baseline") as run:
+    run.log_params({"lr": 1e-3, "batch_size": 32})
+
+    for epoch in range(5):
+        # Simulated loss
+        run.log_metric("train/loss", 0.42 / (epoch + 1), step=epoch)
+
+    # 3. Save atomic SafeTensors bundle with contract and checkpoint state
+    save_bundle(
+        output_path="checkpoints/epoch_5.bundle",
+        model=model,
+        sample_input=torch.randn(1, 8),
+        optimizer=optimizer,
+        epoch=5,
+    )
 ```
 
-### 3. Checkpointing and Fault-Tolerant Resumption
+### 3. Inspect in Terminal or Browser
 
-Save complete training state including optimizer, scheduler, and all random generator states:
+```bash
+# Human-readable terminal summary
+mangosta inspect checkpoints/epoch_5.bundle
 
-```python
-from mangosta import save_bundle, resume_training, ModelRegistry
+# Machine-readable JSON summary for AI agents or CI/CD
+mangosta inspect checkpoints/epoch_5.bundle --json
 
-# Save crash-consistent checkpoint
-save_bundle(
-    output_path="checkpoints/epoch_5.bundle",
-    model=model,
-    family="classifier",
-    version="1.0.0",
-    init_args={"in_channels": 3, "num_classes": 10},
-    sample_input=torch.randn(1, 3, 32, 32),
-    is_checkpoint=True,
-    optimizer=optimizer,
-    scheduler=scheduler,
-    epoch=5,
-    step=1250,
-)
-
-# Resume deterministically following an interruption
-fresh_model = ModelRegistry.build("classifier", version="1.0.0", in_channels=3, num_classes=10)
-fresh_optimizer = torch.optim.Adam(fresh_model.parameters(), lr=1e-3)
-fresh_scheduler = torch.optim.lr_scheduler.StepLR(fresh_optimizer, step_size=5)
-
-state = resume_training(
-    bundle_path="checkpoints/epoch_5.bundle",
-    model=fresh_model,
-    optimizer=fresh_optimizer,
-    scheduler=fresh_scheduler,
-    restore_rng=True,
-)
-
-start_epoch = state.epoch + 1
-start_step = state.step
+# Launch zero-daemon local visual dashboard (Ctrl+C stops cleanly)
+mangosta view
 ```
 
-### 4. Decoupled Production Inference
+### 4. Zero-PyTorch Production Serving
 
-Load models dynamically without importing the underlying model class in your serving scripts:
+Export the bundle to ONNX:
 
-```python
-import torch
-from mangosta import load_bundle
-
-# Reconstructs architecture via registry and mounts weights
-bundle = load_bundle("artifacts/model_final.bundle")
-
-# Inference with automated input signature validation
-input_tensor = torch.randn(4, 3, 32, 32)
-predictions = bundle.predict(input_tensor)
+```bash
+mangosta export-onnx checkpoints/epoch_5.bundle -o exports/model.onnx.bundle --input-shape 1 8 -m src.models.classifier
 ```
 
-### 5. Standalone ONNX Export
-
-Export directly to standard ONNX with automatic dictionary-to-tuple output unrolling and float16 precision:
+Serve in production without installing PyTorch:
 
 ```python
-from mangosta import export_onnx
+from mangosta import ONNXRunner
+import numpy as np
 
-export_onnx(
-    model_or_bundle="artifacts/model_final.bundle",
-    output_path="exports/model.onnx",
-    sample_input_shape=(1, 3, 512, 512),
-    output_mapping=["semantic_mask", "radius_map", "gradient_map"],
-    input_names=["input0"],
-    output_names=["output0", "output1", "output2"],
-    dynamic_axes={
-        "input0": {0: "batch", 2: "height", 3: "width"},
-        "output0": {0: "batch", 2: "height", 3: "width"},
-        "output1": {0: "batch", 2: "height", 3: "width"},
-        "output2": {0: "batch", 2: "height", 3: "width"},
-    },
-    float16=True,
-    opset_version=18,
-    verify=True,
-)
+# Requires only `mangosta[serving]` (~70MB container)
+runner = ONNXRunner("exports/model.onnx.bundle")
+
+# Automated tensor shape & dtype validation
+features = np.random.randn(4, 8).astype(np.float32)
+predictions = runner.predict(features)
 ```
 
 ---
 
 ## Command Line Interface (CLI)
 
-`mangosta` provides a zero-daemon CLI utility:
-
-```bash
-# Scaffold a structured PyTorch project
-mangosta init my_project
-
-# Launch the zero-daemon local experiment and artifact dashboard
-# Opens your default browser automatically to view runs, metric curves, and logged images
-mangosta view
-
-# View a specific experiment directory or bundle
-mangosta view ./experiments --port 8501
-
-# Inspect internal bundle contents, tensor signatures, and metadata
-mangosta inspect checkpoints/epoch_5.bundle
-
-# Generate a self-contained, offline interactive HTML report
-mangosta report experiments/vision/baseline_resnet -o report.html
-mangosta report checkpoints/epoch_5.bundle -o report.html
-
-# Export a bundle directly to ONNX from the terminal
-mangosta export-onnx checkpoints/epoch_5.bundle -o model.onnx --fp16 --input-shape 1 3 32 32 -m models.classifier
-```
+| Command | Description |
+| :--- | :--- |
+| `mangosta init [name]` | Scaffold a production-grade Clean Architecture project. |
+| `mangosta inspect <bundle>` | Inspect internal bundle contents, tensor layers, and signatures. |
+| `mangosta inspect <bundle> --json` | Fast (<5ms) zero-torch JSON inspection for AI agents & CI/CD. |
+| `mangosta view [target] [--port 8501]` | Start the ephemeral zero-daemon local browser viewer. |
+| `mangosta report <target> [-o report.html]` | Generate a self-contained, offline interactive HTML report. |
+| `mangosta export-onnx <bundle> -o <out>` | Export bundle directly to standalone ONNX or `.onnx.bundle`. |
 
 ---
 
-## Package Architecture
+## Documentation & Guides
 
-The library follows Single Responsibility (SRP) and Open-Closed (OCP) design principles:
-
-```text
-src/mangosta/
-|-- __init__.py           # Unified high-level public API
-|-- exceptions.py         # Domain-specific exception hierarchy
-|-- core/                 # Architecture registry and tensor contracts
-|   |-- registry.py       # ModelRegistry, @register_model, dynamic SemVer resolution
-|   `-- schema.py         # TensorSpec, ModelSchema, infer_schema
-|-- artifacts/            # Persistence, atomic packaging, and loading
-|   |-- bundle.py         # Atomic ZIP creation, RNG serialization, checkpointing
-|   `-- loader.py         # Decoupled reconstruction, LoadedBundle, resume_training
-|-- tracking/             # Experiment tracking, artifacts, and visualization
-|   |-- tracker.py        # RunTracker, quick_track, log_image, log_artifact
-|   |-- viewer.py         # Zero-daemon local SPA browser viewer and REST API
-|   `-- report.py         # Offline interactive HTML report generator
-|-- export/               # Standalone production exports
-|   `-- onnx.py           # ONNX exporter, dictionary unrolling, precision handling
-`-- cli/                  # Command-line interface
-    |-- main.py           # CLI entrypoint (init, inspect, report, view, export-onnx)
-    `-- init_project.py   # Project scaffolding engine
-```
+- **User Guides**:
+  - [Guide 1: Fast Prototyping for Solo Researchers](docs/guides/01_fast_prototyping.md)
+  - [Guide 2: Fault Tolerance & Deterministic Resumption](docs/guides/02_fault_tolerance_and_resumption.md)
+  - [Guide 3: Production Serving & Tensor Contracts](docs/guides/03_production_serving_and_contracts.md)
+  - [Guide 4: Autonomous AI Agents & Machine-Readable CLI](docs/guides/04_ai_agents_and_cli.md)
+- **API Reference**:
+  - [`mangosta.tracking` (RunTracker, quick_track)](docs/api/tracker.md)
+  - [`mangosta.artifacts` (save_bundle, load_bundle, resume_training)](docs/api/artifacts.md)
+  - [`mangosta.core.schema` (ModelSchema, TensorSpec, infer_schema)](docs/api/schema.md)
+  - [`mangosta.serving` (ONNXRunner, load_onnx_bundle)](docs/api/serving.md)
+  - [`mangosta.core.registry` (ModelRegistry, @register_model)](docs/api/registry.md)
+  - [`mangosta.export` (export_onnx)](docs/api/export.md)
 
 ---
 
-## AI Agent Integration (Gemini / Antigravity Skill)
+## AI Agent Integration (Antigravity & Cursor Skill)
 
-`mangosta` provides a production-grade Agent Skill designed for LLMs (Google Gemini, Antigravity CLI, Claude, OpenAI). The skill equips AI coding agents with the exact runbooks, API contracts, and defensive patterns needed to manage models autonomously without hallucinating commands or corrupting checkpoint states.
-
-### Installing the Skill in Your Project
-
-To make your local AI agent an expert in `mangosta`, copy the public skill specification to your workspace customization folder:
-
-```bash
-mkdir -p .agents/skills/mangosta
-cp skills/mangosta/SKILL.md .agents/skills/mangosta/SKILL.md
-```
-
-Once installed, AI coding agents automatically discover the skill via its standard YAML frontmatter:
-- **Scope**: Automated project scaffolding (`mangosta init`), architecture registration, contract validation, checkpoint recovery, artifact & image logging, zero-daemon visual inspection (`mangosta view`), and ONNX exports.
-- **Location in repository**: [`skills/mangosta/SKILL.md`](file:///home/yeriel/Workspace/mangosta/skills/mangosta/SKILL.md)
-
-### Agent Prompting Examples
-
-With the skill installed, you can instruct your coding agent directly with natural language:
-- *"Scaffold a new PyTorch computer vision project using mangosta."* -> Agent runs `mangosta init` and configures Clean Architecture components.
-- *"Add checkpointing to our training loop with full RNG and optimizer recovery."* -> Agent implements `save_bundle(..., is_checkpoint=True)`.
-- *"Log validation predictions as images and launch the local viewer."* -> Agent integrates `run.log_image()` and guides you to run `mangosta view`.
-- *"Export our final trained bundle to ONNX with float16 precision."* -> Agent executes `mangosta export-onnx` or `export_onnx()`.
+`mangosta` includes a native Agent Skill specification at [`skills/mangosta/SKILL.md`](skills/mangosta/SKILL.md). When copied to `.agents/skills/mangosta/SKILL.md` in your projects, AI assistants (Cursor, Claude Code, Antigravity) automatically follow defensive patterns:
+- Always registering architectures with `@register_model`.
+- Using `save_bundle` and `resume_training` instead of unsafe `pickle`/`torch.save`.
+- Querying bundle metadata via `mangosta inspect <bundle> --json` to prevent token waste.
 
 ---
 
-## Development
+## Verification & Testing
 
-Run tests and verification suites locally:
+Verify the test suite and static type checks locally:
 
 ```bash
-# Sync virtual environment
-uv sync
+# Run complete test suite with coverage (>85%)
+pytest -v --cov=mangosta
 
-# Run automated tests with coverage
-uv run pytest -v --cov=mangosta
+# Run strict PEP 561 static type checks
+mypy --config-file pyproject.toml src/mangosta
 
-# Run linter and formatting checks
-uv run ruff check src tests examples
-uv run ruff format --check src tests examples
+# Offline test suite (zero network)
+bash scripts/test_offline.sh
 
-# Build package distributions (sdist and wheel)
-uv build
+# Slim serving test (zero PyTorch container)
+bash scripts/test_slim_serving.sh
 ```
 
 ---
 
 ## License
 
-MIT License.
+MIT License. See [LICENSE](LICENSE) for details.

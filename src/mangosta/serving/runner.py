@@ -83,15 +83,16 @@ class LoadedONNXBundle:
 
     @property
     def family(self) -> str:
-        return self.manifest.get("family", "unknown")
+        return str(self.manifest.get("family", "unknown"))
 
     @property
     def version(self) -> str:
-        return self.manifest.get("version", "unknown")
+        return str(self.manifest.get("version", "unknown"))
 
     @property
     def metadata(self) -> dict[str, Any]:
-        return self.manifest.get("metadata", {})
+        meta = self.manifest.get("metadata", {})
+        return dict(meta) if isinstance(meta, dict) else {}
 
     @property
     def model(self) -> Any:

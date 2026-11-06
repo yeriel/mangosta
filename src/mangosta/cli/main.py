@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import json
+import struct
 import sys
 import zipfile
 from pathlib import Path
+from typing import Any
 
 from mangosta.artifacts.bundle import read_bundle_manifest
 from mangosta.cli.init_project import init_project
@@ -13,19 +16,117 @@ from mangosta.tracking.report import generate_report
 from mangosta.tracking.viewer import start_viewer
 
 
-def inspect_bundle(bundle_path: str) -> None:
-    """Print formatted summary of a .bundle file to terminal."""
+def _parse_safetensors_header(header_bytes: bytes) -> dict[str, Any]:
+    """Parse SafeTensors metadata header without importing PyTorch or third-party packages.
+
+    SafeTensors format layout:
+    - 8 bytes: unsigned 64-bit little-endian integer N (header length in bytes)
+    - N bytes: UTF-8 encoded JSON object containing tensor shapes, dtypes, data_offsets,
+      and optional __metadata__ dict.
+    """
+    if len(header_bytes) < 8:
+        return {}
+    header_len = struct.unpack("<Q", header_bytes[:8])[0]
+    if len(header_bytes) < 8 + header_len:
+        return {}
+    json_bytes = header_bytes[8 : 8 + header_len]
+    try:
+        parsed = json.loads(json_bytes.decode("utf-8"))
+        return dict(parsed) if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+
+def inspect_bundle(bundle_path: str, as_json: bool = False) -> None:
+    """Print formatted summary of a .bundle file to terminal or stdout as machine-readable JSON."""
     path = Path(bundle_path).resolve()
     if not path.is_file():
-        print(f"Error: Bundle file '{bundle_path}' not found.", file=sys.stderr)
+        if as_json:
+            print(json.dumps({"error": f"Bundle file '{bundle_path}' not found."}, indent=2), file=sys.stderr)
+        else:
+            print(f"Error: Bundle file '{bundle_path}' not found.", file=sys.stderr)
         sys.exit(1)
 
     try:
         manifest = read_bundle_manifest(path)
     except Exception as e:
-        print(f"Error reading bundle: {e}", file=sys.stderr)
+        if as_json:
+            print(json.dumps({"error": f"Error reading bundle: {e}"}, indent=2), file=sys.stderr)
+        else:
+            print(f"Error reading bundle: {e}", file=sys.stderr)
         sys.exit(1)
 
+    # Inspect zip contents, weights format, layers and hashes
+    format_type = manifest.get("weights_format", "unknown")
+    files_in_zip: list[str] = []
+    weights_size_bytes = 0
+    tensors_info: list[dict[str, Any]] = []
+
+    try:
+        with zipfile.ZipFile(path, "r") as zf:
+            namelist = zf.namelist()
+            files_in_zip = [n for n in namelist if not n.endswith("/")]
+
+            if "model.safetensors" in namelist:
+                format_type = "safetensors"
+                weights_size_bytes = zf.getinfo("model.safetensors").file_size
+
+                # Fast zero-torch read of SafeTensors header
+                with zf.open("model.safetensors", "r") as sf:
+                    # Read first 8 bytes for length, then read header JSON
+                    header_len_bytes = sf.read(8)
+                    if len(header_len_bytes) == 8:
+                        header_len = struct.unpack("<Q", header_len_bytes)[0]
+                        header_json_bytes = sf.read(header_len)
+                        raw_header = json.loads(header_json_bytes.decode("utf-8"))
+                        for tensor_name, info in raw_header.items():
+                            if tensor_name == "__metadata__":
+                                continue
+                            if isinstance(info, dict):
+                                tensors_info.append(
+                                    {
+                                        "name": tensor_name,
+                                        "shape": info.get("shape", []),
+                                        "dtype": info.get("dtype", "unknown"),
+                                    }
+                                )
+            elif "model.onnx" in namelist:
+                format_type = "onnx"
+                weights_size_bytes = zf.getinfo("model.onnx").file_size
+    except Exception:
+        pass
+
+    model_sha = manifest.get("model_sha256") or manifest.get("weights_sha256")
+
+    # Machine-readable JSON output
+    if as_json:
+        payload = {
+            "file": {
+                "name": path.name,
+                "path": str(path),
+                "size_bytes": path.stat().st_size,
+            },
+            "family": manifest.get("family"),
+            "version": manifest.get("version"),
+            "format": format_type,
+            "weights_size_bytes": weights_size_bytes,
+            "weights_sha256": model_sha,
+            "is_checkpoint": manifest.get("is_checkpoint", False),
+            "epoch": manifest.get("epoch"),
+            "step": manifest.get("step"),
+            "dataset_hash": manifest.get("dataset_hash"),
+            "created_at": manifest.get("created_at"),
+            "schema": manifest.get("schema"),
+            "metrics": manifest.get("metrics", {}),
+            "init_args": manifest.get("init_args", {}),
+            "metadata": manifest.get("metadata", {}),
+            "files": files_in_zip,
+            "tensors": tensors_info if format_type == "safetensors" else None,
+        }
+        print(json.dumps(payload, indent=2))
+        return
+
+    # Human-readable formatted text output
     print("\n" + "=" * 60)
     print("MANGOSTA BUNDLE INSPECTOR")
     print("=" * 60)
@@ -38,24 +139,26 @@ def inspect_bundle(bundle_path: str) -> None:
     print(f"Dataset SHA:    {manifest.get('dataset_hash') or 'N/A'}")
     print(f"Created At:     {manifest.get('created_at', 'N/A')}")
 
-    # Inspect Weights / ONNX Model inside zip
-    try:
-        with zipfile.ZipFile(path, "r") as zf:
-            if "model.safetensors" in zf.namelist():
-                weights_size = zf.getinfo("model.safetensors").file_size
-                print(f"Weights Format: safetensors ({weights_size / (1024 * 1024):.2f} MB)")
-            elif "model.onnx" in zf.namelist():
-                onnx_size = zf.getinfo("model.onnx").file_size
-                print(f"Weights Format: onnx ({onnx_size / (1024 * 1024):.2f} MB)")
+    if format_type == "safetensors":
+        print(f"Weights Format: safetensors ({weights_size_bytes / (1024 * 1024):.2f} MB)")
+    elif format_type == "onnx":
+        print(f"Weights Format: onnx ({weights_size_bytes / (1024 * 1024):.2f} MB)")
+    else:
+        print(f"Weights Format: {format_type}")
 
-            model_sha = manifest.get("model_sha256") or manifest.get("weights_sha256")
-            if model_sha:
-                print(f"Weights SHA:    {model_sha}")
+    if model_sha:
+        print(f"Weights SHA:    {model_sha}")
+    if files_in_zip:
+        print(f"Files in zip:   {', '.join(files_in_zip)}")
 
-            namelist = [n for n in zf.namelist() if not n.endswith("/")]
-            print(f"Files in zip:   {', '.join(namelist)}")
-    except Exception:
-        pass
+    # Print SafeTensors Layer Shapes if parsed
+    if tensors_info:
+        print(f"\nModel Tensors / Layers ({len(tensors_info)} total):")
+        display_tensors = tensors_info[:15]
+        for t in display_tensors:
+            print(f"  • {t['name']}: shape={t['shape']}, dtype={t['dtype']}")
+        if len(tensors_info) > 15:
+            print(f"  ... and {len(tensors_info) - 15} more tensors (use --json for full list)")
 
     # Print Schema
     schema = manifest.get("schema")
@@ -138,6 +241,11 @@ def main() -> None:
     # Subcommand: inspect
     inspect_parser = subparsers.add_parser("inspect", help="Inspect a .bundle archive in terminal")
     inspect_parser.add_argument("bundle", help="Path to .bundle file")
+    inspect_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output machine-readable JSON (useful for CI and AI agents)",
+    )
 
     # Subcommand: report
     report_parser = subparsers.add_parser(
@@ -191,7 +299,7 @@ def main() -> None:
         dest = init_project(args.name, template=args.template)
         print(f"Initialized mangosta project in '{dest}'")
     elif args.command == "inspect":
-        inspect_bundle(args.bundle)
+        inspect_bundle(args.bundle, as_json=args.json)
     elif args.command == "report":
         run_report(args.target, args.output)
     elif args.command == "view":

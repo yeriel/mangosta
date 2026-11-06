@@ -226,6 +226,7 @@ def read_bundle_manifest(bundle_path: str | Path) -> dict[str, Any]:
             if "manifest.json" not in zf.namelist():
                 raise BundleCorruptedError(f"Missing 'manifest.json' in bundle: {bundle_path}")
             data = zf.read("manifest.json")
-            return json.loads(data.decode("utf-8"))
+            manifest = json.loads(data.decode("utf-8"))
+            return dict(manifest) if isinstance(manifest, dict) else {}
     except zipfile.BadZipFile as e:
         raise BundleCorruptedError(f"Invalid or corrupted ZIP archive: {bundle_path}") from e

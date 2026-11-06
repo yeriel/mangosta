@@ -29,7 +29,9 @@ RUN pip install --no-cache-dir \
     "packaging>=23.0" \
     "onnx>=1.14.0" \
     "onnxruntime>=1.16.0" \
-    "pytest>=7.0.0"
+    "pytest>=7.0.0" \
+    "pytest-cov>=4.0" \
+    "mypy>=1.10.0"
 
 # Copy repository
 COPY . /app/mangosta

@@ -147,11 +147,11 @@ def create_viewer_handler(root_dir: Path) -> type[http.server.BaseHTTPRequestHan
             if path == "/api/run":
                 exp = query.get("exp", [""])[0]
                 run = query.get("run", [""])[0]
-                data = _load_run_details(resolved_root, exp, run)
-                if data is None:
+                run_details = _load_run_details(resolved_root, exp, run)
+                if run_details is None:
                     self.send_error(404, "Run not found")
                 else:
-                    self._send_json(data)
+                    self._send_json(run_details)
                 return
 
             if path == "/api/artifact":
