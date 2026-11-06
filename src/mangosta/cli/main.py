@@ -38,14 +38,20 @@ def inspect_bundle(bundle_path: str) -> None:
     print(f"Dataset SHA:    {manifest.get('dataset_hash') or 'N/A'}")
     print(f"Created At:     {manifest.get('created_at', 'N/A')}")
 
-    # Inspect Weights inside zip
+    # Inspect Weights / ONNX Model inside zip
     try:
         with zipfile.ZipFile(path, "r") as zf:
             if "model.safetensors" in zf.namelist():
                 weights_size = zf.getinfo("model.safetensors").file_size
                 print(f"Weights Format: safetensors ({weights_size / (1024 * 1024):.2f} MB)")
-            if manifest.get("weights_sha256"):
-                print(f"Weights SHA:    {manifest.get('weights_sha256')}")
+            elif "model.onnx" in zf.namelist():
+                onnx_size = zf.getinfo("model.onnx").file_size
+                print(f"Weights Format: onnx ({onnx_size / (1024 * 1024):.2f} MB)")
+
+            model_sha = manifest.get("model_sha256") or manifest.get("weights_sha256")
+            if model_sha:
+                print(f"Weights SHA:    {model_sha}")
+
             namelist = [n for n in zf.namelist() if not n.endswith("/")]
             print(f"Files in zip:   {', '.join(namelist)}")
     except Exception:

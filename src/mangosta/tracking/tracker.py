@@ -103,6 +103,7 @@ class RunTracker:
         self._metrics_cache: dict[str, list[dict[str, Any]]] = {}
         self._step_counter = 0
         self._orig_signals: dict[int, Any] = {}
+        self._git_commit = _get_git_commit(self.run_dir)
 
         self._save_metadata()
 
@@ -218,10 +219,16 @@ class RunTracker:
 
     def _save_image_array_or_tensor(self, image: Any, dest: Path) -> Path:
         """Save tensor or ndarray as an image file. Returns actual destination path."""
-        import torch
+        # Check PyTorch Tensor without mandatory torch dependency
+        is_torch_tensor = False
+        try:
+            import torch
 
-        # Handle PyTorch Tensor (CPU or GPU)
-        if isinstance(image, torch.Tensor):
+            is_torch_tensor = isinstance(image, torch.Tensor)
+        except ImportError:
+            is_torch_tensor = False
+
+        if is_torch_tensor:
             t = image.detach().cpu().float()
             # If batch dimension (e.g. [1, C, H, W]), squeeze
             if t.ndim == 4 and t.shape[0] == 1:
@@ -384,7 +391,13 @@ class RunTracker:
 
     def _save_metadata(self) -> None:
         """Atomically write run metadata to run.json via tmp file and os.replace."""
-        import torch
+        torch_ver = "not_installed"
+        try:
+            import torch
+
+            torch_ver = getattr(torch, "__version__", "unknown")
+        except ImportError:
+            pass
 
         metadata = {
             "experiment": self.experiment,
@@ -395,10 +408,10 @@ class RunTracker:
             "params": self.params,
             "artifacts": self.artifacts,
             "dataset_hash": self.dataset_hash,
-            "git_commit": _get_git_commit(self.run_dir),
+            "git_commit": self._git_commit,
             "env": {
                 "python_version": platform.python_version(),
-                "torch_version": getattr(torch, "__version__", "unknown"),
+                "torch_version": torch_ver,
                 "system": platform.system(),
                 "node": platform.node(),
                 "machine": platform.machine(),

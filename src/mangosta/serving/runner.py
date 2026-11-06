@@ -93,6 +93,16 @@ class LoadedONNXBundle:
     def metadata(self) -> dict[str, Any]:
         return self.manifest.get("metadata", {})
 
+    @property
+    def model(self) -> Any:
+        """Polymorphic alias to the underlying ONNX inference session."""
+        return self.session
+
+    def __repr__(self) -> str:
+        in_names = f", inputs={self.input_names}" if self.input_names else ""
+        out_names = f", outputs={self.output_names}" if self.output_names else ""
+        return f"LoadedONNXBundle(family='{self.family}', version='{self.version}', format='onnx'{in_names}{out_names})"
+
     def predict(self, input_data: Any, validate: bool = True) -> Any:
         """Execute forward inference with strict data contract validation against ModelSchema.
 

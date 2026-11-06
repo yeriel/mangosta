@@ -109,6 +109,8 @@ def test_load_onnx_bundle_and_predict(tmp_path: Path) -> None:
     assert isinstance(loaded, LoadedONNXBundle)
     assert loaded.family == "servingmlp"
     assert loaded.schema is not None
+    assert "LoadedONNXBundle" in repr(loaded)
+    assert loaded.model is loaded.session
 
     # Test inference with pure NumPy array
     np_test = np.random.randn(5, 8).astype(np.float32)

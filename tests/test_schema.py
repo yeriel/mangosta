@@ -109,6 +109,25 @@ def test_schema_validation_raises_on_invalid_data() -> None:
         schema.validate_input([torch.randn(1, 4)])
 
 
+def test_schema_ergonomic_check_helpers() -> None:
+    model = DummyMLP(in_features=4, out_features=2)
+    schema = infer_schema(model, torch.randn(1, 4))
+
+    # is_valid_input and check_input
+    good_input = torch.randn(2, 4, dtype=torch.float32)
+    bad_input = torch.randn(2, 5, dtype=torch.float32)
+
+    assert schema.is_valid_input(good_input) is True
+    ok, err = schema.check_input(good_input)
+    assert ok is True
+    assert err is None
+
+    assert schema.is_valid_input(bad_input) is False
+    ok, err = schema.check_input(bad_input)
+    assert ok is False
+    assert "dimension 1 mismatch" in str(err)
+
+
 def test_schema_serialization_roundtrip() -> None:
     model = DummyMLP(in_features=4, out_features=2)
     schema = infer_schema(model, torch.randn(1, 4))

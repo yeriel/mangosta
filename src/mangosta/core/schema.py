@@ -150,6 +150,38 @@ class ModelSchema:
             direction="Output",
         )
 
+    def check_input(self, input_data: Any) -> tuple[bool, str | None]:
+        """Check if input data matches schema contract without raising exceptions.
+
+        Returns (is_valid, error_message).
+        """
+        try:
+            self.validate_input(input_data)
+            return True, None
+        except SchemaValidationError as e:
+            return False, str(e)
+
+    def check_output(self, output_data: Any) -> tuple[bool, str | None]:
+        """Check if output data matches schema contract without raising exceptions.
+
+        Returns (is_valid, error_message).
+        """
+        try:
+            self.validate_output(output_data)
+            return True, None
+        except SchemaValidationError as e:
+            return False, str(e)
+
+    def is_valid_input(self, input_data: Any) -> bool:
+        """Return True if input data satisfies the schema, False otherwise."""
+        valid, _ = self.check_input(input_data)
+        return valid
+
+    def is_valid_output(self, output_data: Any) -> bool:
+        """Return True if output data satisfies the schema, False otherwise."""
+        valid, _ = self.check_output(output_data)
+        return valid
+
     def _validate_structure_and_specs(
         self,
         data: Any,

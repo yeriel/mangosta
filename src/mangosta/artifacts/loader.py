@@ -71,6 +71,10 @@ class LoadedBundle:
     def metadata(self) -> dict[str, Any]:
         return self.manifest.get("metadata", {})
 
+    def __repr__(self) -> str:
+        schema_info = f", schema={self.schema.input_structure}->{self.schema.output_structure}" if self.schema else ""
+        return f"LoadedBundle(family='{self.family}', version='{self.version}', format='safetensors'{schema_info})"
+
     def predict(self, input_data: Any, validate: bool = True) -> Any:
         """Run forward inference, optionally verifying the input against the schema contract."""
         if validate and self.schema is not None:
