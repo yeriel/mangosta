@@ -1,4 +1,4 @@
-"""Targeted tests to push code coverage past 85% for Mangosta Phase 4."""
+"""Targeted tests for edge cases, error handlers, and boundary conditions."""
 
 from __future__ import annotations
 

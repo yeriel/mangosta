@@ -198,7 +198,7 @@ def test_onnx_runner_and_export_edge_cases(tmp_path: Path) -> None:
 
 def test_public_api_getattr_safety() -> None:
     # Existing symbols resolve cleanly
-    assert mangosta.__version__ == "0.2.0a1"
+    assert mangosta.__version__ == "0.3.0"
     assert hasattr(mangosta, "save_bundle")
     assert hasattr(mangosta, "load_bundle")
     assert hasattr(mangosta, "RunTracker")

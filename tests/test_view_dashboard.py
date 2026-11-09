@@ -1,4 +1,4 @@
-"""Tests for Phase 5: Enhanced mangosta view, validation data inspection, and multi-run comparison."""
+"""Tests for mangosta view: validation data inspection, bundle explorer, and multi-run comparison."""
 
 from __future__ import annotations
 
