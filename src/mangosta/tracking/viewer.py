@@ -1072,7 +1072,6 @@ def _get_dashboard_html() -> str:
         <span class="live-pulse"></span>
         <span id="live-text">LIVE WATCH</span>
       </div>
-      <button class="btn" onclick="refreshData()" title="Refresh" style="padding:6px 12px; font-size:1.05rem; line-height:1;">🔄</button>
     </div>
   </header>
 
