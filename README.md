@@ -2,12 +2,13 @@
 
 **Lightweight MLOps and Model Lifecycle Management for PyTorch.**
 
-> *"Simple by default, strict on demand"* — Instant setup for rapid solo experimentation, yet engineered with the architectural rigor required by production pipelines and autonomous AI coding agents: formal tensor contracts, deterministic fault tolerance, zero-daemon persistence, and machine-readable CLI interfaces.
+> *"Simple by default, strict on demand"* — Instant setup for solo experimentation and research, engineered with the architectural rigor required by production pipelines and autonomous AI coding agents: formal tensor contracts, deterministic fault tolerance, zero-daemon persistence, and machine-readable CLI interfaces.
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 [![Type Checked: mypy](https://img.shields.io/badge/type%20checked-mypy-informational.svg)](https://mypy-lang.org/)
+[![Documentation](https://img.shields.io/badge/docs-yeriel.github.io%2Fmangosta-blue)](https://yeriel.github.io/mangosta/)
 
 ---
 
@@ -15,13 +16,13 @@
 
 Modern MLOps stacks frequently impose overwhelming operational complexity: background daemons, external database engines, cloud platform lock-in, and fragile networking.
 
-`mangosta` is engineered to provide **local-first, serverless model lifecycle primitives** directly within Python and standard file systems. It eliminates infrastructure overhead while delivering strict guarantees regarding reproducibility, tensor contracts, and crash-consistent persistence.
+`mangosta` provides **local-first, serverless model lifecycle primitives** directly within Python and standard file systems. It eliminates infrastructure overhead while delivering strict guarantees regarding reproducibility, tensor contracts, and crash-consistent persistence.
 
 ```mermaid
 flowchart LR
-    A["Scaffold Project<br/><code>mangosta init</code>"] --> B["Train & Track<br/><code>RunTracker (JSONL)</code>"]
+    A["Scaffold Project<br/><code>uv run mangosta init</code>"] --> B["Train & Track<br/><code>RunTracker (JSONL)</code>"]
     B --> C["Atomic Bundle<br/><code>.bundle (SafeTensors)</code>"]
-    C --> D["Inspection & Audit<br/><code>inspect --json / report</code>"]
+    C --> D["Inspection & Audit<br/><code>uv run mangosta inspect --json</code>"]
     C --> E["Production Serving<br/><code>.onnx.bundle (Zero-Torch)</code>"]
 ```
 
@@ -32,7 +33,7 @@ flowchart LR
 - **Contract-Driven Inference**: Non-invasive tensor signatures validate shapes (including dynamic batch dimensions) and data types before runtime execution.
 - **Deterministic Bit-to-Bit Resumption**: Captures complete training snapshots (optimizer, scheduler, GradScaler, and RNG states across PyTorch CPU/CUDA, Python, and NumPy).
 - **Slim Production Serving**: Deploy high-performance ONNX microservices (`~70MB` Docker containers) without installing PyTorch (`~2.5GB`).
-- **AI Agent-Native**: Machine-readable `mangosta inspect <bundle> --json` parses SafeTensors binary headers in `< 5ms` with zero tensor allocations, perfectly tailored for LLMs and CI/CD pipelines.
+- **AI Agent-Native**: Machine-readable `uv run mangosta inspect <bundle> --json` parses SafeTensors binary headers in `< 5ms` with zero tensor allocations, tailored for LLMs and CI/CD pipelines.
 
 ---
 
@@ -52,34 +53,28 @@ flowchart LR
 
 ---
 
-## Installation
+## Installation (with `uv`)
 
-Install using `uv` (recommended):
+Mangosta standardizes on **`uv`** as the package and environment manager.
 
-```bash
-uv add mangosta
-```
+### Recommended for Development: `mangosta[all]`
 
-Or using standard `pip`:
+For local development, research, and experimentation, install the complete toolkit (Training + ONNX Export + Serving):
 
 ```bash
-pip install mangosta
+# In your project:
+uv add "mangosta[all]"
 ```
 
-### Optional Bundles
+### Installation Targets by Environment
 
-- **ONNX Model Checker**:
-  ```bash
-  pip install "mangosta[onnx]"
-  ```
-- **Zero-PyTorch Slim Serving (Production microservices)**:
-  ```bash
-  pip install "mangosta[serving]"
-  ```
-- **Full Development Suite**:
-  ```bash
-  pip install "mangosta[dev]"
-  ```
+| Target / Extra | Command | What It Installs | When to Use |
+| :--- | :--- | :--- | :--- |
+| **Full Toolkit** *(Recommended)* | `uv add "mangosta[all]"` | PyTorch, SafeTensors, ONNX, ONNX Runtime | **Local development**, experiments, full pipeline |
+| **Training Only** | `uv add "mangosta[train]"` | PyTorch, SafeTensors | GPU training servers / clusters |
+| **Production Serving** | `uv add "mangosta[serving]"` | ONNX Runtime, NumPy, PyYAML | **Zero-PyTorch containers (`~70MB`)** |
+| **ONNX Export** | `uv add "mangosta[onnx]"` | ONNX | Model export and graph verification |
+| **Minimal Base** | `uv add mangosta` | NumPy, PyYAML, Packaging | Schema contracts & CLI inspection only |
 
 ---
 
@@ -87,12 +82,14 @@ pip install mangosta
 
 ### 1. Scaffold a Clean Architecture Project
 
+Run the scaffolding CLI command using `uv run`:
+
 ```bash
-mangosta init my_project
+uv run mangosta init my_project
 cd my_project
 ```
 
-Scaffolds a modular Clean Architecture project with `configs/`, `src/`, `entrypoints/`, and `.agents/mangosta.md`.
+Scaffolds a modular project with `configs/`, `src/`, `entrypoints/`, and `.agents/mangosta.md`.
 
 ### 2. Register Architecture & Track Training
 
@@ -119,10 +116,10 @@ with RunTracker(experiment="sensor_exp", run_name="baseline") as run:
     run.log_params({"lr": 1e-3, "batch_size": 32})
 
     for epoch in range(5):
-        # Simulated loss
-        run.log_metric("train/loss", 0.42 / (epoch + 1), step=epoch)
+        loss = 0.42 / (epoch + 1)
+        run.log_metrics({"train/loss": loss}, step=epoch)
 
-        # Log real validation sample for visual inspection in mangosta view (Input vs GT vs Pred)
+        # Log validation sample for visual inspection in mangosta view (Input vs GT vs Pred)
         run.log_validation_sample(
             sample_id="sample_01",
             prediction=torch.rand(3, 32, 32),
@@ -142,35 +139,37 @@ with RunTracker(experiment="sensor_exp", run_name="baseline") as run:
 
 ### 3. Inspect in Terminal or Browser
 
+All Mangosta CLI commands run via `uv run mangosta`:
+
 ```bash
 # Human-readable terminal summary
-mangosta inspect checkpoints/epoch_5.bundle
+uv run mangosta inspect checkpoints/epoch_5.bundle
 
-# Machine-readable JSON summary for AI agents or CI/CD
-mangosta inspect checkpoints/epoch_5.bundle --json
+# Machine-readable JSON summary for AI agents or CI/CD (< 5ms, zero PyTorch allocation)
+uv run mangosta inspect checkpoints/epoch_5.bundle --json
 
 # Launch zero-daemon local visual dashboard (Ctrl+C stops cleanly)
-mangosta view
+uv run mangosta view
 ```
 
 ### 4. Zero-PyTorch Production Serving
 
-Export the bundle to ONNX:
+Export the bundle to an ONNX bundle:
 
 ```bash
-mangosta export-onnx checkpoints/epoch_5.bundle -o exports/model.onnx.bundle --input-shape 1 8 -m src.models.classifier
+uv run mangosta export-onnx checkpoints/epoch_5.bundle -o exports/model.onnx.bundle --input-shape 1 8 -m src.models
 ```
 
 Serve in production without installing PyTorch:
 
 ```python
-from mangosta import ONNXRunner
+from mangosta.serving import load_onnx_bundle
 import numpy as np
 
-# Requires only `mangosta[serving]` (~70MB container)
-runner = ONNXRunner("exports/model.onnx.bundle")
+# In production container (requires only `uv add "mangosta[serving]"`, ~70MB container):
+runner = load_onnx_bundle("exports/model.onnx.bundle")
 
-# Automated tensor shape & dtype validation
+# Automated tensor shape & dtype validation against ModelSchema contract
 features = np.random.randn(4, 8).astype(np.float32)
 predictions = runner.predict(features)
 ```
@@ -179,31 +178,47 @@ predictions = runner.predict(features)
 
 ## Command Line Interface (CLI)
 
+Mangosta commands are invoked inside your project using `uv run mangosta <command>`:
+
 | Command | Description |
 | :--- | :--- |
-| `mangosta init [name]` | Scaffold a production-grade Clean Architecture project. |
-| `mangosta inspect <bundle>` | Inspect internal bundle contents, tensor layers, and signatures. |
-| `mangosta inspect <bundle> --json` | Fast (<5ms) zero-torch JSON inspection for AI agents & CI/CD. |
-| `mangosta view [target] [--port 8501]` | Start the ephemeral local visual dashboard (Real Data Timelapse, A/B/GT grid, Multi-Run Compare, EMA smoothing, SafeTensors inspector, Live Watch). |
-| `mangosta report <target> [-o report.html]` | Generate a self-contained, offline interactive HTML report. |
-| `mangosta export-onnx <bundle> -o <out>` | Export bundle directly to standalone ONNX or `.onnx.bundle`. |
+| `uv run mangosta init [name]` | Scaffold a production-grade Clean Architecture project. |
+| `uv run mangosta inspect <bundle>` | Inspect internal bundle contents, tensor layers, and signatures. |
+| `uv run mangosta inspect <bundle> --json` | Fast (<5ms) zero-torch JSON inspection for AI agents & CI/CD. |
+| `uv run mangosta view [target] [--port 8501]` | Start the ephemeral local visual dashboard (Real Data Timelapse, A/B/GT grid, Multi-Run Compare, EMA smoothing, SafeTensors inspector, Live Watch). |
+| `uv run mangosta report <target> [-o report.html]` | Generate a self-contained, offline interactive HTML report. |
+| `uv run mangosta export-onnx <bundle> -o <out>` | Export bundle directly to standalone ONNX or `.onnx.bundle`. |
 
 ---
 
-## Documentation & Guides
+## Canonical Examples (`examples/`)
 
-- **User Guides**:
-  - [Guide 1: Fast Prototyping for Solo Researchers](docs/guides/01_fast_prototyping.md)
-  - [Guide 2: Fault Tolerance & Deterministic Resumption](docs/guides/02_fault_tolerance_and_resumption.md)
-  - [Guide 3: Production Serving & Tensor Contracts](docs/guides/03_production_serving_and_contracts.md)
-  - [Guide 4: Autonomous AI Agents & Machine-Readable CLI](docs/guides/04_ai_agents_and_cli.md)
-- **API Reference**:
-  - [`mangosta.tracking` (RunTracker, quick_track)](docs/api/tracker.md)
-  - [`mangosta.artifacts` (save_bundle, load_bundle, resume_training)](docs/api/artifacts.md)
-  - [`mangosta.core.schema` (ModelSchema, TensorSpec, infer_schema)](docs/api/schema.md)
-  - [`mangosta.serving` (ONNXRunner, load_onnx_bundle)](docs/api/serving.md)
-  - [`mangosta.core.registry` (ModelRegistry, @register_model)](docs/api/registry.md)
-  - [`mangosta.export` (export_onnx)](docs/api/export.md)
+Explore the 4 self-contained tutorials ordered in logical pedagogical progression:
+
+| # | Example Script | Purpose & Key Concepts |
+| :-: | :--- | :--- |
+| **01** | [`examples/01_lifecycle_training_vs_production.py`](examples/01_lifecycle_training_vs_production.py) | **The Core Lifecycle**: Training with PyTorch vs. Zero-PyTorch production serving (`~70MB` microservice). |
+| **02** | [`examples/02_model_checkpoint_and_deterministic_resume.py`](examples/02_model_checkpoint_and_deterministic_resume.py) | **Checkpointing & Resumption**: Crash-consistent checkpoints with exact bit-to-bit RNG recovery (CPU/CUDA/NumPy/Python). |
+| **03** | [`examples/03_model_export_and_inspection.py`](examples/03_model_export_and_inspection.py) | **Export & Inspection**: Multi-output ONNX export, dynamic axes, `<5ms` inspection, and offline HTML reports. |
+| **04** | [`examples/04_visual_tracking_and_timelapses.py`](examples/04_visual_tracking_and_timelapses.py) | **Visual Tracking & View**: Validation sample timelapses and `uv run mangosta view` dashboard. |
+
+Run any example with `uv`:
+```bash
+uv run python examples/01_lifecycle_training_vs_production.py
+```
+
+---
+
+## Documentation
+
+Full documentation, architecture guides, and API reference are available at:
+👉 **[yeriel.github.io/mangosta](https://yeriel.github.io/mangosta/)**
+
+To run the documentation locally:
+```bash
+cd docs
+uv tool run zensical serve
+```
 
 ---
 
@@ -212,7 +227,7 @@ predictions = runner.predict(features)
 `mangosta` includes a native Agent Skill specification at [`skills/mangosta/SKILL.md`](skills/mangosta/SKILL.md). When copied to `.agents/skills/mangosta/SKILL.md` in your projects, AI assistants (Cursor, Claude Code, Antigravity) automatically follow defensive patterns:
 - Always registering architectures with `@register_model`.
 - Using `save_bundle` and `resume_training` instead of unsafe `pickle`/`torch.save`.
-- Querying bundle metadata via `mangosta inspect <bundle> --json` to prevent token waste.
+- Querying bundle metadata via `uv run mangosta inspect <bundle> --json` to prevent token waste.
 
 ---
 
@@ -222,12 +237,12 @@ Verify the test suite and static type checks locally:
 
 ```bash
 # Run complete test suite with coverage (>85%)
-pytest -v --cov=mangosta
+uv run pytest -v --cov=mangosta
 
 # Run strict PEP 561 static type checks
-mypy --config-file pyproject.toml src/mangosta
+uv run mypy --config-file pyproject.toml src/mangosta
 
-# Offline test suite (zero network)
+# Offline test suite (zero network container)
 bash scripts/test_offline.sh
 
 # Slim serving test (zero PyTorch container)
