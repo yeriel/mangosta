@@ -90,12 +90,27 @@ def _scan_experiments(root_dir: Path) -> dict[str, list[dict[str, Any]]]:
             if runs:
                 results[child.name] = runs
 
+    # Case 3: If nothing found yet, check common experiment subdirectories like experiments/ or runs/
+    if not results:
+        for sub_name in ("experiments", "runs", "outputs"):
+            sub_path = root_dir / sub_name
+            if sub_path.is_dir() and sub_path != root_dir:
+                sub_res = _scan_experiments(sub_path)
+                if sub_res:
+                    results.update(sub_res)
+
     return results
 
 
 def _load_run_details(root_dir: Path, experiment: str, run_name: str) -> dict[str, Any] | None:
     """Load complete run details including parameters, metrics history, and artifacts."""
     run_dir = root_dir / experiment / run_name
+    if not run_dir.exists():
+        for sub_name in ("experiments", "runs", "outputs"):
+            candidate = root_dir / sub_name / experiment / run_name
+            if candidate.exists():
+                run_dir = candidate
+                break
     if not run_dir.exists():
         if (root_dir / run_name).exists() and ((root_dir / run_name / "run.json").exists() or (root_dir / run_name / "metrics.jsonl").exists()):
             run_dir = root_dir / run_name
@@ -398,13 +413,19 @@ def create_viewer_handler(root_dir: Path) -> type[http.server.BaseHTTPRequestHan
 
                 artifact_path = resolved_root / exp / run / "artifacts" / filename
                 if not artifact_path.is_file():
-                    # Fallback if root_dir is already experiment or run folder
-                    alt1 = resolved_root / run / "artifacts" / filename
-                    alt2 = resolved_root / "artifacts" / filename
+                    # Fallback if root_dir is parent workspace or already experiment/run folder
+                    alt1 = resolved_root / "experiments" / exp / run / "artifacts" / filename
+                    alt2 = resolved_root / "runs" / exp / run / "artifacts" / filename
+                    alt3 = resolved_root / run / "artifacts" / filename
+                    alt4 = resolved_root / "artifacts" / filename
                     if alt1.is_file():
                         artifact_path = alt1
                     elif alt2.is_file():
                         artifact_path = alt2
+                    elif alt3.is_file():
+                        artifact_path = alt3
+                    elif alt4.is_file():
+                        artifact_path = alt4
                     else:
                         self.send_error(404, "Artifact file not found")
                         return
