@@ -31,6 +31,9 @@ MANIFEST
 .coverage.*
 htmlcov/
 
+# Local data & temp files
+data/
+
 # Demo artifacts & local runs
 demo_artifacts/
 experiments/

@@ -795,21 +795,76 @@ def _get_dashboard_html() -> str:
     button.btn-primary { background: var(--accent); color: #080b10; border-color: var(--accent); }
     button.btn-primary:hover { background: #22d3ee; }
 
-    /* Chart Box */
-    .chart-box {
+    /* Metrics Multi-Grid Layout */
+    .metrics-section {
+      margin-bottom: 28px;
+    }
+    .group-pill {
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      letter-spacing: 0.05em;
+    }
+    .train-pill {
+      background: rgba(6, 182, 212, 0.12);
+      color: var(--accent);
+      border: 1px solid rgba(6, 182, 212, 0.3);
+    }
+    .val-pill {
+      background: rgba(16, 185, 129, 0.12);
+      color: var(--emerald);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .other-pill {
+      background: rgba(168, 85, 247, 0.12);
+      color: var(--purple);
+      border: 1px solid rgba(168, 85, 247, 0.3);
+    }
+    .charts-multi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
+      gap: 16px;
+    }
+    .chart-card {
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 8px;
-      padding: 18px;
-      margin-bottom: 22px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
       position: relative;
+      transition: border-color 0.15s ease;
     }
-    svg.chart-svg {
+    .chart-card:hover {
+      border-color: #334155;
+    }
+    .chart-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .chart-card-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      color: #ffffff;
+    }
+    .chart-card-stats {
+      display: flex;
+      gap: 8px;
+      font-size: 0.72rem;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+    }
+    .metric-svg {
       width: 100%;
-      height: 330px;
+      height: 220px;
       background: #06090f;
       border-radius: 6px;
-      margin-top: 12px;
+      margin-top: 6px;
       overflow: visible;
     }
     .chart-tooltip {
@@ -1070,23 +1125,58 @@ def _get_dashboard_html() -> str:
       <div id="tab-metrics" class="view-panel active">
         <div id="metrics-top-meta" class="grid-metrics"></div>
 
-        <div class="chart-box">
-          <div class="section-header">
-            <div class="section-title">
-              <span>Metric Trajectory</span>
-              <select id="metric-select" onchange="renderChart()"></select>
-            </div>
-            <div class="control-row">
-              <span style="font-size:0.8rem; color:var(--text-muted);">EMA Smoothing:</span>
-              <input type="range" id="smoothing-slider" min="0" max="0.99" step="0.01" value="0.5" oninput="updateSmoothing(this.value)" style="width:130px;" />
-              <span id="smoothing-val" style="font-family:var(--font-mono); font-size:0.8rem; width:35px;">0.50</span>
+        <!-- Global Chart Toolbar -->
+        <div class="card" style="padding: 12px 18px; margin-bottom: 22px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span style="font-weight: 700; font-family: var(--font-mono); font-size: 0.9rem; color: #ffffff;">Metrics Dashboard</span>
+            <span id="metrics-count-badge" style="font-size: 0.75rem; color: var(--text-muted); font-family: var(--font-mono);"></span>
+          </div>
+          <div class="control-row">
+            <span style="font-size:0.8rem; color:var(--text-muted);">EMA Smoothing:</span>
+            <input type="range" id="smoothing-slider" min="0" max="0.99" step="0.01" value="0.5" oninput="updateSmoothing(this.value)" style="width:140px;" />
+            <span id="smoothing-val" style="font-family:var(--font-mono); font-size:0.8rem; width:35px; color: var(--accent);">0.50</span>
+          </div>
+        </div>
+
+        <div id="metrics-empty-message" style="display:none;" class="empty-state">No step metrics recorded in selected runs.</div>
+
+        <!-- Training Metrics Section -->
+        <div id="train-metrics-section" class="metrics-section" style="display:none;">
+          <div class="section-header" style="margin-bottom: 12px;">
+            <div class="section-title" style="display: flex; align-items: center; gap: 8px;">
+              <span class="group-pill train-pill">TRAIN</span>
+              <span>Training Metrics</span>
+              <span id="train-count-badge" style="font-size:0.75rem; color:var(--text-muted); font-family:var(--font-mono);"></span>
             </div>
           </div>
-
-          <svg id="chart-svg" class="chart-svg"></svg>
-          <div id="chart-tooltip" class="chart-tooltip"></div>
-          <div id="chart-legend" class="chart-legend"></div>
+          <div id="train-charts-grid" class="charts-multi-grid"></div>
         </div>
+
+        <!-- Validation Metrics Section -->
+        <div id="val-metrics-section" class="metrics-section" style="display:none;">
+          <div class="section-header" style="margin-bottom: 12px;">
+            <div class="section-title" style="display: flex; align-items: center; gap: 8px;">
+              <span class="group-pill val-pill">VALIDATION</span>
+              <span>Validation Metrics</span>
+              <span id="val-count-badge" style="font-size:0.75rem; color:var(--text-muted); font-family:var(--font-mono);"></span>
+            </div>
+          </div>
+          <div id="val-charts-grid" class="charts-multi-grid"></div>
+        </div>
+
+        <!-- General / Other Metrics Section -->
+        <div id="other-metrics-section" class="metrics-section" style="display:none;">
+          <div class="section-header" style="margin-bottom: 12px;">
+            <div class="section-title" style="display: flex; align-items: center; gap: 8px;">
+              <span class="group-pill other-pill">GENERAL</span>
+              <span>System &amp; Other Metrics</span>
+              <span id="other-count-badge" style="font-size:0.75rem; color:var(--text-muted); font-family:var(--font-mono);"></span>
+            </div>
+          </div>
+          <div id="other-charts-grid" class="charts-multi-grid"></div>
+        </div>
+
+        <div id="chart-tooltip" class="chart-tooltip"></div>
 
         <div class="section-header" style="margin-top:28px;">
           <div class="section-title">Hyperparameter Divergence / Comparison</div>
@@ -1350,6 +1440,24 @@ def _get_dashboard_html() -> str:
     // ----------------------------------------------------
     // TAB 1: METRICS & MULTI-RUN COMPARISON
     // ----------------------------------------------------
+    function categorizeMetric(name) {
+      const lower = name.toLowerCase();
+      if (lower.startsWith("train/") || lower.startsWith("train_") || lower.startsWith("train:") || lower.includes("train")) {
+        return "train";
+      }
+      if (lower.startsWith("val/") || lower.startsWith("val_") || lower.startsWith("val:") || lower.startsWith("eval/") || lower.startsWith("eval_") || lower.includes("val") || lower.includes("eval") || lower.includes("dice") || lower.includes("iou")) {
+        return "val";
+      }
+      if (lower === "loss" || lower === "epoch_loss") {
+        return "train";
+      }
+      return "other";
+    }
+
+    function safeMetricId(name) {
+      return name.replace(/[^a-zA-Z0-9_-]/g, "_");
+    }
+
     function renderMetricsTab() {
       const activeData = loadedRunsData[`${activeExp}:${activeRun}`];
       const topMeta = document.getElementById("metrics-top-meta");
@@ -1377,7 +1485,11 @@ def _get_dashboard_html() -> str:
         </div>
       `;
 
-      // Find union of all metrics across all selected runs
+      renderAllMetricCharts();
+      renderParamDiffTable();
+    }
+
+    function renderAllMetricCharts() {
       const metricSet = new Set();
       selectedRuns.forEach(k => {
         const d = loadedRunsData[k];
@@ -1386,32 +1498,101 @@ def _get_dashboard_html() -> str:
         }
       });
 
-      const select = document.getElementById("metric-select");
-      const currentSelectedMetric = select.value;
-      select.innerHTML = "";
+      const emptyMsg = document.getElementById("metrics-empty-message");
+      const trainSec = document.getElementById("train-metrics-section");
+      const valSec = document.getElementById("val-metrics-section");
+      const otherSec = document.getElementById("other-metrics-section");
+
+      const trainGrid = document.getElementById("train-charts-grid");
+      const valGrid = document.getElementById("val-charts-grid");
+      const otherGrid = document.getElementById("other-charts-grid");
+
+      const countBadge = document.getElementById("metrics-count-badge");
 
       if (metricSet.size === 0) {
-        select.innerHTML = "<option>No metrics</option>";
-        document.getElementById("chart-svg").innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="#64748b" font-family="var(--font-mono)">No step metrics recorded in run.</text>`;
-        document.getElementById("chart-legend").innerHTML = "";
-      } else {
-        metricSet.forEach(m => {
-          const opt = document.createElement("option");
-          opt.value = m;
-          opt.textContent = m;
-          if (m === currentSelectedMetric) opt.selected = true;
-          select.appendChild(opt);
-        });
-        renderChart();
+        if (emptyMsg) emptyMsg.style.display = "block";
+        if (trainSec) trainSec.style.display = "none";
+        if (valSec) valSec.style.display = "none";
+        if (otherSec) otherSec.style.display = "none";
+        if (countBadge) countBadge.textContent = "0 metrics";
+        return;
       }
 
-      renderParamDiffTable();
+      if (emptyMsg) emptyMsg.style.display = "none";
+      if (countBadge) countBadge.textContent = `${metricSet.size} metrics across ${selectedRuns.size} run(s)`;
+
+      const allMetrics = Array.from(metricSet).sort();
+      const trainMetrics = [];
+      const valMetrics = [];
+      const otherMetrics = [];
+
+      allMetrics.forEach(m => {
+        const cat = categorizeMetric(m);
+        if (cat === "train") trainMetrics.push(m);
+        else if (cat === "val") valMetrics.push(m);
+        else otherMetrics.push(m);
+      });
+
+      // Render Train Section
+      if (trainMetrics.length > 0) {
+        trainSec.style.display = "block";
+        document.getElementById("train-count-badge").textContent = `(${trainMetrics.length})`;
+        renderMetricGrid(trainGrid, trainMetrics);
+      } else {
+        trainSec.style.display = "none";
+        trainGrid.innerHTML = "";
+      }
+
+      // Render Val Section
+      if (valMetrics.length > 0) {
+        valSec.style.display = "block";
+        document.getElementById("val-count-badge").textContent = `(${valMetrics.length})`;
+        renderMetricGrid(valGrid, valMetrics);
+      } else {
+        valSec.style.display = "none";
+        valGrid.innerHTML = "";
+      }
+
+      // Render Other Section
+      if (otherMetrics.length > 0) {
+        otherSec.style.display = "block";
+        document.getElementById("other-count-badge").textContent = `(${otherMetrics.length})`;
+        renderMetricGrid(otherGrid, otherMetrics);
+      } else {
+        otherSec.style.display = "none";
+        otherGrid.innerHTML = "";
+      }
+    }
+
+    function renderMetricGrid(gridEl, metricList) {
+      gridEl.innerHTML = metricList.map(m => {
+        const safeId = safeMetricId(m);
+        return `
+          <div class="chart-card" id="card-${safeId}">
+            <div class="chart-card-header">
+              <div class="chart-card-title">${m}</div>
+              <div class="chart-card-stats" id="stats-${safeId}"></div>
+            </div>
+            <svg class="metric-svg" id="svg-${safeId}"></svg>
+            <div class="chart-legend" id="legend-${safeId}"></div>
+          </div>
+        `;
+      }).join("");
+
+      // Render each SVG chart in this grid
+      metricList.forEach(m => {
+        const safeId = safeMetricId(m);
+        const svg = document.getElementById(`svg-${safeId}`);
+        const legend = document.getElementById(`legend-${safeId}`);
+        const stats = document.getElementById(`stats-${safeId}`);
+        if (svg) renderMetricSVG(m, svg, legend, stats);
+      });
     }
 
     function updateSmoothing(val) {
       smoothingWeight = parseFloat(val);
       document.getElementById("smoothing-val").textContent = smoothingWeight.toFixed(2);
-      renderChart();
+      renderAllMetricCharts();
     }
 
     function computeEMA(points, weight) {
@@ -1423,22 +1604,18 @@ def _get_dashboard_html() -> str:
       });
     }
 
-    function renderChart() {
-      const metricName = document.getElementById("metric-select").value;
-      const svg = document.getElementById("chart-svg");
-      const legend = document.getElementById("chart-legend");
-      if (!metricName || metricName === "No metrics") return;
-
+    function renderMetricSVG(metricName, svg, legend, stats) {
       const runs = Array.from(selectedRuns).map(k => loadedRunsData[k]).filter(d => d && d.metrics && d.metrics[metricName]);
       if (runs.length === 0) {
-        svg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="#64748b" font-family="var(--font-mono)">Metric '${metricName}' not present in selected runs.</text>`;
-        legend.innerHTML = "";
+        svg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="#64748b" font-family="var(--font-mono)" font-size="11">No data in selected runs</text>`;
+        if (legend) legend.innerHTML = "";
+        if (stats) stats.innerHTML = "";
         return;
       }
 
-      const width = svg.clientWidth || 800;
-      const height = 330;
-      const padL = 60, padR = 30, padT = 30, padB = 40;
+      const width = svg.clientWidth || 440;
+      const height = 220;
+      const padL = 55, padR = 20, padT = 20, padB = 30;
 
       // Calculate global min/max step and value across all lines
       let allSteps = [];
@@ -1468,19 +1645,20 @@ def _get_dashboard_html() -> str:
         <line x1="${padL}" y1="${height - padB}" x2="${width - padR}" y2="${height - padB}" stroke="#1e293b" stroke-width="1.5" />
         <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${height - padB}" stroke="#1e293b" stroke-width="1.5" />
         <!-- Y Axis ticks -->
-        <text x="${padL - 10}" y="${padT + 4}" fill="#64748b" font-family="var(--font-mono)" font-size="10" text-anchor="end">${maxV.toFixed(3)}</text>
-        <text x="${padL - 10}" y="${(padT + height - padB)/2 + 4}" fill="#64748b" font-family="var(--font-mono)" font-size="10" text-anchor="end">${((maxV + minV)/2).toFixed(3)}</text>
-        <text x="${padL - 10}" y="${height - padB}" fill="#64748b" font-family="var(--font-mono)" font-size="10" text-anchor="end">${minV.toFixed(3)}</text>
+        <text x="${padL - 8}" y="${padT + 4}" fill="#64748b" font-family="var(--font-mono)" font-size="10" text-anchor="end">${maxV.toFixed(3)}</text>
+        <text x="${padL - 8}" y="${(padT + height - padB)/2 + 4}" fill="#64748b" font-family="var(--font-mono)" font-size="10" text-anchor="end">${((maxV + minV)/2).toFixed(3)}</text>
+        <text x="${padL - 8}" y="${height - padB}" fill="#64748b" font-family="var(--font-mono)" font-size="10" text-anchor="end">${minV.toFixed(3)}</text>
         <!-- Horizontal gridlines -->
         <line x1="${padL}" y1="${padT}" x2="${width - padR}" y2="${padT}" stroke="#131d2e" stroke-dasharray="3,3" />
         <line x1="${padL}" y1="${(padT + height - padB)/2}" x2="${width - padR}" y2="${(padT + height - padB)/2}" stroke="#131d2e" stroke-dasharray="3,3" />
         <!-- X Axis labels -->
-        <text x="${padL}" y="${height - padB + 20}" fill="#64748b" font-family="var(--font-mono)" font-size="10">step ${minS}</text>
-        <text x="${width - padR}" y="${height - padB + 20}" fill="#64748b" font-family="var(--font-mono)" font-size="10" text-anchor="end">step ${maxS}</text>
+        <text x="${padL}" y="${height - padB + 18}" fill="#64748b" font-family="var(--font-mono)" font-size="10">step ${minS}</text>
+        <text x="${width - padR}" y="${height - padB + 18}" fill="#64748b" font-family="var(--font-mono)" font-size="10" text-anchor="end">step ${maxS}</text>
       `;
 
       let linesSvg = "";
       let legendHtml = "";
+      let latestValues = [];
 
       runs.forEach((r, idx) => {
         const color = PALETTE[idx % PALETTE.length];
@@ -1506,20 +1684,24 @@ def _get_dashboard_html() -> str:
           d += (i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`);
         });
 
-        linesSvg += `<path d="${d}" fill="none" stroke="${color}" stroke-width="2.5" />`;
+        linesSvg += `<path d="${d}" fill="none" stroke="${color}" stroke-width="2.2" />`;
 
         const lastVal = rawPoints[rawPoints.length - 1].value;
+        latestValues.push(lastVal);
         legendHtml += `
           <div class="legend-item">
             <span class="legend-dot" style="background:${color};"></span>
             <span style="font-weight:600; color:#fff;">${r.run_name}</span>
-            <span style="color:var(--text-muted);">last: ${lastVal.toFixed(4)}</span>
+            <span style="color:var(--text-muted); font-size:0.75rem;">last: ${lastVal.toFixed(4)}</span>
           </div>
         `;
       });
 
       svg.innerHTML = gridSvg + linesSvg;
-      legend.innerHTML = legendHtml;
+      if (legend) legend.innerHTML = legendHtml;
+      if (stats && latestValues.length > 0) {
+        stats.innerHTML = `<span style="color:var(--accent);">curr: ${latestValues[0].toFixed(4)}</span> <span style="color:var(--text-muted);">| min: ${minV.toFixed(4)}</span>`;
+      }
 
       // Mouse crosshair tracking
       svg.onmousemove = (e) => {
@@ -1531,18 +1713,18 @@ def _get_dashboard_html() -> str:
         const targetStep = Math.round(minS + ratio * stepRange);
 
         // Render vertical crosshair line
-        const crossLine = `<line id="crosshair-v" x1="${mouseX}" y1="${padT}" x2="${mouseX}" y2="${height - padB}" stroke="#06b6d4" stroke-width="1" stroke-dasharray="2,2" />`;
-        const oldCross = svg.querySelector("#crosshair-v");
+        const crossLine = `<line id="crosshair-v-${safeMetricId(metricName)}" x1="${mouseX}" y1="${padT}" x2="${mouseX}" y2="${height - padB}" stroke="#06b6d4" stroke-width="1" stroke-dasharray="2,2" />`;
+        const oldCross = svg.querySelector(`[id^="crosshair-v"]`);
         if (oldCross) oldCross.remove();
         svg.insertAdjacentHTML("beforeend", crossLine);
 
         // Populate Tooltip
         const tip = document.getElementById("chart-tooltip");
-        let tipRows = `<strong>Step: ${targetStep}</strong><br/>`;
+        let tipRows = `<strong>${metricName}</strong><div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:4px;">Step: ${targetStep}</div>`;
         runs.forEach((r, idx) => {
           const color = PALETTE[idx % PALETTE.length];
           const closest = r.metrics[metricName].reduce((prev, curr) => Math.abs(curr.step - targetStep) < Math.abs(prev.step - targetStep) ? curr : prev);
-          tipRows += `<span style="color:${color};">●</span> ${r.run_name}: ${closest.value.toFixed(4)}<br/>`;
+          tipRows += `<div style="display:flex; justify-content:space-between; gap:12px;"><span style="color:${color};">● ${r.run_name}</span><strong>${closest.value.toFixed(4)}</strong></div>`;
         });
         tip.innerHTML = tipRows;
         tip.style.display = "block";
@@ -1551,7 +1733,7 @@ def _get_dashboard_html() -> str:
       };
 
       svg.onmouseleave = () => {
-        const oldCross = svg.querySelector("#crosshair-v");
+        const oldCross = svg.querySelector(`[id^="crosshair-v"]`);
         if (oldCross) oldCross.remove();
         document.getElementById("chart-tooltip").style.display = "none";
       };
@@ -1943,6 +2125,13 @@ def _get_dashboard_html() -> str:
           if (e.key === "ArrowLeft") prevStep();
           if (e.key === "ArrowRight") nextStep();
         }
+      });
+      let resizeTimeout;
+      window.addEventListener("resize", () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+          if (activeTab === "metrics") renderAllMetricCharts();
+        }, 150);
       });
     }
 
