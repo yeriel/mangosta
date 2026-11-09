@@ -56,6 +56,11 @@ class ModelRegistry:
                 "Set allow_override=True if you intentionally wish to overwrite."
             )
         cls._models[key] = model_cls
+        try:
+            setattr(model_cls, "_mangosta_family", family.strip().lower())
+            setattr(model_cls, "_mangosta_version", version.strip())
+        except Exception:
+            pass
 
     @classmethod
     def get_model_cls(cls, family: str, version: str | None = None) -> tuple[Any, str]:
@@ -66,6 +71,19 @@ class ModelRegistry:
         """
         family_clean = family.strip().lower()
         matching_versions: list[str] = [v for (f, v) in cls._models.keys() if f == family_clean]
+
+        if not matching_versions:
+            # Tolerant fallback: match normalized alphanumeric identifiers
+            # (e.g. 'sensorclassifier' <-> 'sensor_classifier' <-> 'sensor-classifier')
+            def _norm(s: str) -> str:
+                return s.replace("_", "").replace("-", "")
+
+            target_norm = _norm(family_clean)
+            for (f, v) in cls._models.keys():
+                if _norm(f) == target_norm:
+                    family_clean = f
+                    matching_versions = [ver for (fam, ver) in cls._models.keys() if fam == family_clean]
+                    break
 
         if not matching_versions:
             available_families = sorted({f for (f, _) in cls._models.keys()})

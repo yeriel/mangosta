@@ -125,7 +125,57 @@ def save_bundle(
     tmp_dest = dest.with_name(f"{dest.name}.tmp_{os.getpid()}_{uuid.uuid4().hex[:6]}")
 
     # Smart defaults
-    resolved_family = family if family is not None else model.__class__.__name__.lower()
+    resolved_family = family
+    resolved_version = version
+
+    if resolved_family is None:
+        # 1. Check if model class or instance was registered with @register_model
+        model_cls = model if isinstance(model, type) else model.__class__
+        registered_family = getattr(model, "_mangosta_family", None) or getattr(model_cls, "_mangosta_family", None)
+        if registered_family:
+            resolved_family = registered_family
+            if version == "0.1.0":
+                resolved_version = getattr(model, "_mangosta_version", None) or getattr(model_cls, "_mangosta_version", None) or version
+        else:
+            # 2. Check if model class is in ModelRegistry
+            try:
+                from mangosta.core.registry import ModelRegistry
+
+                for (fam, ver), registered_cls in ModelRegistry._models.items():
+                    if registered_cls is model_cls:
+                        resolved_family = fam
+                        if version == "0.1.0":
+                            resolved_version = ver
+                        break
+            except Exception:
+                pass
+
+        # 3. Fallback to snake_case / lower of class name
+        if resolved_family is None:
+            resolved_family = model.__class__.__name__.lower()
+
+    # Smart auto-detection of init_args if not provided
+    resolved_init_args = init_args
+    if resolved_init_args is None:
+        resolved_init_args = {}
+        try:
+            import inspect
+
+            sig = inspect.signature(model.__class__.__init__)
+            for param_name, param in sig.parameters.items():
+                if param_name == "self":
+                    continue
+                if hasattr(model, param_name):
+                    val = getattr(model, param_name)
+                    if isinstance(val, (int, float, str, bool, list, dict, tuple)):
+                        resolved_init_args[param_name] = val
+                elif param.default is not inspect.Parameter.empty:
+                    val = param.default
+                    if isinstance(val, (int, float, str, bool, list, dict, tuple)):
+                        resolved_init_args[param_name] = val
+        except Exception:
+            resolved_init_args = {}
+
     is_checkpoint = optimizer is not None or scheduler is not None or scaler is not None
 
     # Infer schema if sample_input is given and schema not explicitly provided
@@ -145,8 +195,8 @@ def save_bundle(
     manifest: dict[str, Any] = {
         "format_version": "1.0",
         "family": resolved_family,
-        "version": version,
-        "init_args": init_args or {},
+        "version": resolved_version,
+        "init_args": resolved_init_args,
         "is_checkpoint": is_checkpoint,
         "weights_format": "safetensors",
         "weights_sha256": weights_sha256,

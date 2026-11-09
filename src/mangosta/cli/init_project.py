@@ -94,7 +94,14 @@ def build_model(config: dict[str, Any]) -> nn.Module:
 def _write_entrypoints(dest: Path) -> None:
     # 1. train.py
     train_code = """import argparse
+import sys
 from pathlib import Path
+
+# Ensure project root is in sys.path when running as script or CLI entrypoint
+project_root = Path(__file__).resolve().parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 import yaml
 import torch
 import torch.nn as nn
@@ -125,9 +132,14 @@ def main():
 
     exp_cfg = config.get("experiment", {})
     train_cfg = config.get("training", {})
+    model_cfg = config.get("model", {})
     epochs = args.epochs or train_cfg.get("epochs", 5)
     lr = train_cfg.get("learning_rate", 0.001)
     bs = train_cfg.get("batch_size", 16)
+
+    family = model_cfg.get("family", "sensor_classifier")
+    version = str(model_cfg.get("version", "1.0.0"))
+    init_args = {k: v for k, v in model_cfg.items() if k not in ("family", "version")}
 
     train_loader, val_loader = get_dataloaders(bs)
     model = build_model(config)
@@ -159,6 +171,9 @@ def main():
             sample_input=torch.randn(1, 8),
             optimizer=optimizer,
             epoch=epochs,
+            family=family,
+            version=version,
+            init_args=init_args,
         )
 
         # Final production model (smart default: no optimizer -> is_checkpoint=False)
@@ -166,6 +181,9 @@ def main():
             output_path="checkpoints/model_final.bundle",
             model=model,
             sample_input=torch.randn(1, 8),
+            family=family,
+            version=version,
+            init_args=init_args,
         )
 
         print(f"Training finished. Checkpoint: {ckpt_path.name} | Production: {final_path.name}")
@@ -178,6 +196,14 @@ if __name__ == "__main__":
 
     # 2. infer.py
     infer_code = """import argparse
+import sys
+from pathlib import Path
+
+# Ensure project root is in sys.path when running as script or CLI entrypoint
+project_root = Path(__file__).resolve().parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 import torch
 from mangosta import load_bundle
 import src.models  # trigger registration
@@ -204,6 +230,14 @@ if __name__ == "__main__":
 
     # 3. benchmark.py
     benchmark_code = """import argparse
+import sys
+from pathlib import Path
+
+# Ensure project root is in sys.path when running as script or CLI entrypoint
+project_root = Path(__file__).resolve().parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 import time
 import torch
 from mangosta import load_bundle
