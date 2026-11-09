@@ -62,7 +62,7 @@ if HAS_TORCH:
         register_component,
         register_model,
     )
-    from mangosta.export import export_onnx
+    from mangosta.export import export_onnx, export_onnx_as_bundle
     from mangosta.tracking import (
         RunTracker,
         compute_sha256,
@@ -119,6 +119,7 @@ _TORCH_ALL = [
     "ResumeState",
     # Export
     "export_onnx",
+    "export_onnx_as_bundle",
 ]
 
 if HAS_TORCH:

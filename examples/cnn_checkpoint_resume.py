@@ -21,8 +21,8 @@ import torch.optim as optim
 
 from mangosta import (
     ModelRegistry,
+    RunTracker,
     load_bundle,
-    quick_track,
     register_model,
     resume_training,
     save_bundle,
@@ -90,7 +90,7 @@ def main() -> None:
     random.seed(42)
 
     print("\n[Phase 1] Initial training execution (Epochs 1 and 2)...")
-    with quick_track(
+    with RunTracker(
         experiment="cnn_experiment", run_name="baseline_cnn", root_dir=artifacts_dir / "runs"
     ) as tracker:
         tracker.log_params({"model": "simple_cnn", "optimizer": "adamw", "lr": 1e-3})

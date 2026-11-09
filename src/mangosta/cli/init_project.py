@@ -283,19 +283,30 @@ Adhere to the following rules when reading, modifying, or executing code in this
 ## 1. Operating Rules
 - **No Background Daemons or External Servers**: All tracking is local and offline. Never attempt to spin up Docker, MLflow servers, or background web processes.
 - **Tracking Standard**: Always track runs using `with RunTracker(experiment=..., root_dir="experiments") as run:`.
-- **Metrics and Params**: Log dictionaries only via `run.log_params({...})` and `run.log_metrics({...}, step=epoch)`.
+- **Metrics and Logging**:
+  - Log scalar metrics: `run.log_metrics({"train/loss": loss.item()}, step=epoch)`.
+  - Log parameters: `run.log_params({"lr": 1e-3, "optimizer": "AdamW"})`.
+  - Log temporal validation samples: `run.log_validation_sample(sample_id="sample_01", prediction=pred_np, input_image=input_np, ground_truth=gt_np, step=epoch)`.
+- **Model Registration**:
+  - Always register architectures with `@register_model(family="<name>", version="<semver>")`.
+  - Never bypass the registry for production bundles. Reconstruct models with `ModelRegistry.build()`.
 - **Packaging with `save_bundle`**:
-  - Training checkpoint: pass `optimizer=optimizer, epoch=epoch` to `save_bundle()`. Mangosta automatically packages training state for resumption.
-  - Final inference model: omit optimizer to produce a lightweight deployment bundle.
-- **Inference with `load_bundle`**:
+  - Training checkpoint: pass `optimizer=optimizer, scheduler=scheduler, epoch=epoch` to `save_bundle()`. Mangosta automatically packages training state and exact RNG seeds for bit-to-bit resumption.
+  - Final inference model: omit optimizer/scheduler to produce a lightweight deployment bundle with SafeTensors weights and `ModelSchema` contract.
+- **Deterministic Resumption with `resume_training`**:
+  - To resume interrupted runs: `resume_state = resume_training(bundle_path, model, optimizer, scheduler, restore_rng=True)`.
+- **Production Serving vs Training**:
+  - For zero-PyTorch production microservices (~70MB Docker): export with `export_onnx_as_bundle(bundle_or_model, "deploy/model.onnx.bundle")` and serve with `mangosta.serving.ONNXRunner.predict(numpy_array)`.
+- **Decoupled PyTorch Inference with `load_bundle`**:
   - `bundle = load_bundle("path/to.bundle")` reconstructs the model and validates inputs via `bundle.predict(sample)`.
 
 ## 2. Common Commands
 - Train model: `uv run train` or `uv run python -m entrypoints.train`
 - Run inference: `uv run infer`
 - Benchmark latency: `uv run benchmark`
-- Inspect bundle: `mangosta inspect checkpoints/model_final.bundle --json`
-- Local web visualizer: `mangosta view`
+- Inspect bundle metadata (<5ms SafeTensors header parsing): `mangosta inspect checkpoints/model_final.bundle --json`
+- Generate offline HTML report: `mangosta report experiments/<exp>/<run> -o report.html`
+- Local web visualizer (zero daemons): `mangosta view`
 """
     (dest / ".agents" / "mangosta.md").write_text(agent_instructions, encoding="utf-8")
 

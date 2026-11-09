@@ -372,3 +372,15 @@ def export_onnx(
                     pass
 
     return dest
+
+
+def export_onnx_as_bundle(*args: Any, **kwargs: Any) -> Path:
+    """Convenience alias for export_onnx(..., as_bundle=True).
+
+    Exports a PyTorch model into a self-contained ONNX bundle (.onnx.bundle)
+    containing model.onnx, cryptographic SHA-256 manifest, and ModelSchema contract.
+    """
+    if "bundle_or_model" in kwargs and "model_or_bundle" not in kwargs:
+        kwargs["model_or_bundle"] = kwargs.pop("bundle_or_model")
+    kwargs["as_bundle"] = True
+    return export_onnx(*args, **kwargs)

@@ -22,10 +22,10 @@ import torch.optim as optim
 
 from mangosta import (
     ModelRegistry,
+    RunTracker,
     export_onnx,
     generate_report,
     load_bundle,
-    quick_track,
     register_model,
     resume_training,
     save_bundle,
@@ -72,8 +72,8 @@ def main() -> None:
     final_bundle_path = work_dir / "model_final.bundle"
     report_html_path = work_dir / "lifecycle_report.html"
 
-    print("\n[Phase 1] Starting experiment tracking with quick_track...")
-    with quick_track(
+    print("\n[Phase 1] Starting experiment tracking with RunTracker...")
+    with RunTracker(
         run_name="demo_run", experiment="regression_demo", root_dir=work_dir / "experiments"
     ) as run:
         data_hash = run.set_dataset(dataset_file)
