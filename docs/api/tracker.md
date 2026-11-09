@@ -64,14 +64,25 @@ Copy a file (e.g. CSV, confusion matrix JSON, plot) into the run's `artifacts/` 
 - **`local_path`**: Path to the source file on disk.
 - **`artifact_name`**: Optional destination name inside `artifacts/`. Defaults to the filename.
 
-#### `log_image(name: str, image: Any, step: int | None = None) -> Path`
+#### `log_image(name: str, image: Any, step: int | None = None, tag: str | None = None, sample_id: str | None = None) -> Path`
 Save an evaluation image into `artifacts/` and register it in `run.json`.
 - **`name`**: Name prefix for the image.
 - **`image`**: Supported inputs:
   - `torch.Tensor` (shape `[C, H, W]`, `[1, H, W]`, `[3, H, W]`, or `[H, W]`, float `[0, 1]` or uint8 `[0, 255]`)
   - `numpy.ndarray` (shape `[H, W]`, `[H, W, 1]`, `[H, W, 3]`, or `[H, W, 4]`)
   - Existing image file path (`.png`, `.jpg`, `.jpeg`, `.ppm`)
-- **`step`**: Optional training step index appended to the filename.
+- **`step`**: Optional training step index. When provided, automatically versions the filename (e.g. `{name}_step_{step:04d}.png`) to preserve temporal progression across epochs without overwriting previous steps.
+- **`tag`**: Semantic role tag (e.g. `"prediction"`, `"ground_truth"`, `"input"`).
+- **`sample_id`**: Identifier of the validation data sample for grouping in `mangosta view`.
+
+#### `log_validation_sample(sample_id: str, prediction: Any, input_image: Any | None = None, ground_truth: Any | None = None, step: int | None = None) -> dict[str, Path]`
+Log a complete validation comparison triplet or pair for visual inspection in `mangosta view`.
+- **`sample_id`**: Unique sample identifier (e.g. `"patient_01_slice_4"`, `"test_dog_05"`).
+- **`prediction`**: Model prediction image (tensor, ndarray, or file path).
+- **`input_image`**: Optional real input image from the validation dataset.
+- **`ground_truth`**: Optional target/ground truth image for side-by-side comparison.
+- **`step`**: Optional epoch or step index.
+- **Returns**: Dictionary mapping roles (`"input"`, `"ground_truth"`, `"prediction"`) to saved `Path` objects.
 
 #### `set_dataset(path: str | Path, compute_hash: bool = True) -> str`
 Record the dataset path and calculate its cryptographic SHA-256 fingerprint (streaming chunks to avoid memory overhead).

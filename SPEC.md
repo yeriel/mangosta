@@ -301,25 +301,26 @@ mi-proyecto/
     - *Guía 4: Supervisión de Agentes de IA: flujos con Cursor, Claude Code y Antigravity usando CLI --json y .agents/mangosta.md.*
   - [x] Manual de CLI con ejemplos de terminal para `mangosta init`, `inspect`, `view`, `report` y `export-onnx`.
 
-### Fase 5: Rediseño de Experiencia Visual, Inspección de Datos Reales en Validación y Potenciación de `mangosta view` (Objetivo: v1.0.0)
-- [ ] **Inspección de Artefactos e Imágenes de Validación en Datos Reales:**
-  - [ ] Versionado automático de imágenes en `RunTracker.log_image`: si se pasa `step`, persigue el linaje temporal sin sobrescribir el archivo previo (ej. `val_sample_step_005.png`), indexado en `run.json`.
-  - [ ] **Línea de Tiempo / Epoch Scrubber:** Slider temporal interactivo para recorrer épocas/pasos y ver cómo evoluciona la predicción del modelo sobre la misma muestra de validación real (efecto timelapse de entrenamiento).
-  - [ ] **Comparador Visual A/B y Grid de Validación:** Vista comparativa para poner lado a lado: Entrada Real vs Ground Truth vs Predicción del Modelo.
-  - [ ] **Lightbox de Alta Resolución con Zoom y Paneo:** Modal para inspeccionar detalles píxel a píxel en tareas de visión computacional, segmentación o mapas de calor.
-- [ ] **Comparación Multi-Run Superpuesta (Overlay) y Suavizado:**
-  - [ ] Selección de múltiples corridas con curvas de métricas superpuestas en SVG interactivo y paleta contrastante.
-  - [ ] Slider de suavizado exponencial (EMA 0.0 a 0.99) para filtrar ruido en curvas de batch en el cliente sin alterar datos de disco.
-  - [ ] Tooltip con cursor vertical sincronizado (crosshair) mostrando valores exactos y pasos en hover.
-- [ ] **Modo "Live Watch" (Auto-Refresh en Tiempo Real):**
-  - [ ] Interruptor `LIVE` que sondea métricas cada 2 segundos sin recargar la página para monitorear el entrenamiento desde un segundo monitor.
-- [ ] **Inspector Visual de Bundles (`.bundle`) y Diff de Hiperparámetros:**
-  - [ ] Pestaña en la UI para inspeccionar contratos `ModelSchema`, tamaños de capas de SafeTensors y hashes SHA-256 sin salir del navegador.
-  - [ ] Resaltado automático de hiperparámetros divergentes entre dos corridas seleccionadas.
-- [ ] **Estética de Vanguardia "Industrial Dark / Craft DX" (Cero Genérica):**
-  - [ ] Paleta calibrada en carbón mate (`#0a0d14`), ámbar cálido (`#f59e0b`), cyan eléctrico (`#06b6d4`) y esmeralda (`#10b981`).
-  - [ ] Tipografía de alta densidad (UI sans-serif limpia con JetBrains/Geist Mono para métricas, pasos, hashes y tensores).
-  - [ ] Cero dependencias externas (HTML/CSS/JS 100% autocontenido en Python, sin Node.js, offline-first).
+### Fase 5: Rediseño de Experiencia Visual, Inspección de Datos Reales en Validación y Potenciación de `mangosta view` (Objetivo: v1.0.0) [COMPLETADA]
+- [x] **Inspección de Artefactos e Imágenes de Validación en Datos Reales:**
+  - [x] Versionado automático de imágenes en `RunTracker.log_image`: si se pasa `step`, persigue el linaje temporal sin sobrescribir el archivo previo (ej. `val_sample_step_005.png`), indexado en `run.json`.
+  - [x] Método ergonómico `RunTracker.log_validation_sample(...)` para registrar tripletas (Entrada Real, Ground Truth y Predicción) vinculadas a un `sample_id` en una época.
+  - [x] **Línea de Tiempo / Epoch Scrubber:** Slider temporal interactivo para recorrer épocas/pasos y ver cómo evoluciona la predicción del modelo sobre la misma muestra de validación real (efecto timelapse de entrenamiento con botón Play/Pause).
+  - [x] **Comparador Visual A/B y Grid de Validación:** Vista comparativa para poner lado a lado: Entrada Real vs Ground Truth vs Predicción del Modelo.
+  - [x] **Lightbox de Alta Resolución con Zoom y Paneo:** Modal para inspeccionar detalles píxel a píxel en tareas de visión computacional, segmentación o mapas de calor.
+- [x] **Comparación Multi-Run Superpuesta (Overlay) y Suavizado:**
+  - [x] Selección de múltiples corridas con curvas de métricas superpuestas en SVG interactivo y paleta contrastante.
+  - [x] Slider de suavizado exponencial (EMA 0.0 a 0.99) para filtrar ruido en curvas de batch en el cliente sin alterar datos de disco.
+  - [x] Tooltip con cursor vertical sincronizado (crosshair) mostrando valores exactos y pasos en hover.
+- [x] **Modo "Live Watch" (Auto-Refresh en Tiempo Real):**
+  - [x] Interruptor `LIVE` que sondea métricas cada 2 segundos sin recargar la página para monitorear el entrenamiento desde un segundo monitor.
+- [x] **Inspector Visual de Bundles (`.bundle` y `.onnx.bundle`) y Diff de Hiperparámetros:**
+  - [x] Pestaña en la UI para inspeccionar contratos `ModelSchema`, tamaños de capas de SafeTensors y hashes SHA-256 sin salir del navegador.
+  - [x] Resaltado automático de hiperparámetros divergentes entre corridas seleccionadas en color ámbar.
+- [x] **Estética de Vanguardia "Industrial Dark / Craft DX" (Cero Genérica):**
+  - [x] Paleta calibrada en carbón mate (`#080b10`), ámbar cálido (`#f59e0b`), cyan eléctrico (`#06b6d4`) y esmeralda (`#10b981`).
+  - [x] Tipografía de alta densidad (UI sans-serif limpia con JetBrains/Geist Mono para métricas, pasos, hashes y tensores).
+  - [x] Cero dependencias externas (HTML/CSS/JS 100% autocontenido en Python, sin Node.js, offline-first).
 
 ---
 

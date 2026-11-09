@@ -122,6 +122,14 @@ with RunTracker(experiment="sensor_exp", run_name="baseline") as run:
         # Simulated loss
         run.log_metric("train/loss", 0.42 / (epoch + 1), step=epoch)
 
+        # Log real validation sample for visual inspection in mangosta view (Input vs GT vs Pred)
+        run.log_validation_sample(
+            sample_id="sample_01",
+            prediction=torch.rand(3, 32, 32),
+            input_image=torch.rand(3, 32, 32),
+            step=epoch,
+        )
+
     # 3. Save atomic SafeTensors bundle with contract and checkpoint state
     save_bundle(
         output_path="checkpoints/epoch_5.bundle",
@@ -176,7 +184,7 @@ predictions = runner.predict(features)
 | `mangosta init [name]` | Scaffold a production-grade Clean Architecture project. |
 | `mangosta inspect <bundle>` | Inspect internal bundle contents, tensor layers, and signatures. |
 | `mangosta inspect <bundle> --json` | Fast (<5ms) zero-torch JSON inspection for AI agents & CI/CD. |
-| `mangosta view [target] [--port 8501]` | Start the ephemeral zero-daemon local browser viewer. |
+| `mangosta view [target] [--port 8501]` | Start the ephemeral local visual dashboard (Real Data Timelapse, A/B/GT grid, Multi-Run Compare, EMA smoothing, SafeTensors inspector, Live Watch). |
 | `mangosta report <target> [-o report.html]` | Generate a self-contained, offline interactive HTML report. |
 | `mangosta export-onnx <bundle> -o <out>` | Export bundle directly to standalone ONNX or `.onnx.bundle`. |
 

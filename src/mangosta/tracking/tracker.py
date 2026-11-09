@@ -187,35 +187,105 @@ class RunTracker:
         name: str,
         image: Any,
         step: int | None = None,
+        tag: str | None = None,
+        sample_id: str | None = None,
     ) -> Path:
-        """Save and log a validation/prediction image (tensor, ndarray, or file path)."""
-        base_name = name
+        """Save and log a validation/prediction image (tensor, ndarray, or file path).
+
+        If step is provided, the filename is automatically versioned (e.g. `sample_step_0005.png`)
+        to maintain the training timeline without overwriting previous evaluation steps.
+        """
+        raw_path = Path(name)
+        stem = raw_path.stem
+        ext = raw_path.suffix.lower() if raw_path.suffix else ".png"
+        if ext not in (".png", ".jpg", ".jpeg", ".ppm"):
+            ext = ".png"
+
+        # Version by step unless step is already part of the name
+        if step is not None and not any(
+            k in stem.lower()
+            for k in (
+                f"step_{step}",
+                f"step{step}",
+                f"epoch_{step}",
+                f"epoch{step}",
+            )
+        ):
+            filename = f"{stem}_step_{step:04d}{ext}"
+        else:
+            filename = f"{stem}{ext}"
+
+        dest = self.artifacts_dir / filename
+
         if isinstance(image, (str, Path)) and Path(image).is_file():
-            safe_name = base_name if "." in base_name else f"{base_name}{Path(image).suffix}"
-            dest = self.artifacts_dir / safe_name
             import shutil
 
             shutil.copy2(image, dest)
             actual_dest = dest
         else:
-            safe_name = (
-                base_name
-                if base_name.endswith((".png", ".jpg", ".jpeg", ".ppm"))
-                else f"{base_name}.png"
-            )
-            dest = self.artifacts_dir / safe_name
             actual_dest = self._save_image_array_or_tensor(image, dest)
 
-        entry = {
+        entry: dict[str, Any] = {
             "name": actual_dest.name,
+            "base_name": stem,
             "type": "image",
             "step": step,
+            "tag": tag or "image",
+            "sample_id": sample_id or stem,
             "size_bytes": actual_dest.stat().st_size if actual_dest.exists() else 0,
             "logged_at": datetime.now(timezone.utc).isoformat(),
         }
         self.artifacts.append(entry)
         self._save_metadata()
         return actual_dest
+
+    def log_validation_sample(
+        self,
+        sample_id: str,
+        prediction: Any,
+        input_image: Any | None = None,
+        ground_truth: Any | None = None,
+        step: int | None = None,
+    ) -> dict[str, Path]:
+        """Log a complete validation sample (real input, ground truth, and prediction) for visual inspection.
+
+        Enables side-by-side A/B comparison and epoch-by-epoch visual timelapse in mangosta view.
+
+        Args:
+            sample_id: Identifier for this specific validation instance (e.g. 'val_sample_01').
+            prediction: Model prediction image (torch.Tensor, np.ndarray, or file path).
+            input_image: Optional real validation input image.
+            ground_truth: Optional ground truth target image for comparison.
+            step: Optional epoch or step number.
+
+        Returns:
+            Dict mapping roles ('input', 'ground_truth', 'prediction') to saved image paths.
+        """
+        results: dict[str, Path] = {}
+        if input_image is not None:
+            results["input"] = self.log_image(
+                name=f"{sample_id}_input",
+                image=input_image,
+                step=step,
+                tag="input",
+                sample_id=sample_id,
+            )
+        if ground_truth is not None:
+            results["ground_truth"] = self.log_image(
+                name=f"{sample_id}_gt",
+                image=ground_truth,
+                step=step,
+                tag="ground_truth",
+                sample_id=sample_id,
+            )
+        results["prediction"] = self.log_image(
+            name=f"{sample_id}_pred",
+            image=prediction,
+            step=step,
+            tag="prediction",
+            sample_id=sample_id,
+        )
+        return results
 
     def _save_image_array_or_tensor(self, image: Any, dest: Path) -> Path:
         """Save tensor or ndarray as an image file. Returns actual destination path."""
