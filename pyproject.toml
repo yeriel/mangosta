@@ -69,8 +69,6 @@ dev = [
     "onnx>=1.23.2",
     "onnxruntime>=1.16.0",
     "onnxscript>=0.7.2",
-    "pytest>=8.0",
-    "pytest-cov>=4.0",
     "ruff>=0.4.0",
     "mypy>=1.10.0",
 ]
@@ -85,10 +83,6 @@ warn_unused_configs = true
 disallow_untyped_defs = false
 check_untyped_defs = true
 ignore_missing_imports = true
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["src", "."]
 
 [tool.ruff]
 line-length = 100
