@@ -33,6 +33,23 @@ htmlcov/
 
 # Local data & temp files
 data/
+runs/
+checkpoints/
+*.parquet
+*.log
+*.pt
+*.pth
+*.onnx
+*.safetensors
+
+# OS / Editor temporary files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
 
 # Demo artifacts & local runs
 demo_artifacts/
