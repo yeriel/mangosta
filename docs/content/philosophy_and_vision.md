@@ -1,4 +1,4 @@
-# Philosophy & Vision: The 80/20 of Mangosta
+# Philosophy & Vision
 
 > **"Simple by default, strict on demand."**  
 > Mangosta is built around one practical goal: **make the transition from PyTorch training to production serving effortless, deterministic, and lightweight.**

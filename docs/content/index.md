@@ -22,7 +22,7 @@ uv add "mangosta[all]"
 
 ---
 
-## What Can You Do with Mangosta? (The 80/20)
+## What Can You Do with Mangosta?
 
 In most ML projects, moving from a research script to production is painful: `.pt` files rely on insecure `pickle`, interrupted runs lose their random state, experiment trackers require heavy servers, and production Docker containers weigh `2.5GB+` because they carry PyTorch.
 
