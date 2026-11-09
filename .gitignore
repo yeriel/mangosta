@@ -34,6 +34,9 @@ htmlcov/
 # Documentation build output
 site/
 .zensical/
+docs/site/
+docs/.cache/
+docs/.zensical/
 
 # Local data & temp files
 data/

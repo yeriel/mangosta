@@ -3,12 +3,13 @@ site_url = "https://yeriel.github.io/mangosta/"
 site_name = "Mangosta"
 site_description = "Lightweight MLOps and Model Lifecycle Management for PyTorch"
 site_author = "Yeriel & Mangosta Contributors"
+docs_dir = "content"
 
 copyright = "Copyright &copy; 2026 Yeriel"
 
 repo_url = "https://github.com/yeriel/mangosta"
 repo_name = "yeriel/mangosta"
-edit_uri = "edit/main/docs/"
+edit_uri = "edit/main/docs/content/"
 
 nav = [
   { "Overview" = "index.md" },
