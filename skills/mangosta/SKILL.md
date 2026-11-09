@@ -58,36 +58,47 @@ flowchart TD
 
 ---
 
-## 3. Agent Operational Rules
+## 3. Environment & Installation Guidelines (Standard: `uv`)
+
+All commands and execution workflows should standardize on `uv`:
+- **Full Development Toolkit**: `uv add "mangosta[all]"` (installs PyTorch, SafeTensors, ONNX, and ONNX Runtime).
+- **Zero-PyTorch Microservices**: `uv add "mangosta[serving]"` (installs ONNX Runtime, NumPy, PyYAML).
+- **CLI Commands Execution**: Always run CLI commands through `uv run mangosta <command>` inside projects.
+
+---
+
+## 4. Agent Operational Rules
 
 1. **Scaffold with Clean Architecture**:
-   When asked to bootstrap a new PyTorch project, invoke `mangosta init <name>`. This creates a standard tree with `configs/`, `src/`, `entrypoints/`, and `.agents/mangosta.md`.
+   When asked to bootstrap a new PyTorch project, invoke `uv run mangosta init <name>`. This creates a standard tree with `configs/`, `src/`, `entrypoints/`, and `.agents/mangosta.md`.
 2. **Never Bypass the Registry for Production Bundles**:
    Always register neural network architectures using `@register_model(family="<name>", version="<semver>")`. This guarantees that `load_bundle()` can reconstruct the network without hardcoded class imports in serving scripts.
 3. **Respect Collision Protection**:
    `ModelRegistry.register_model()` rejects duplicate `(family, version)` pairs with `RegistryCollisionError`. Never overwrite versions silently; bump the semantic version (e.g., `1.0.0` -> `1.1.0`) unless explicitly instructed via `allow_override=True`.
-4. **Tracking Standard: Always Generate `RunTracker`**:
+4. **Consistent Bundle Family & Version Alignment**:
+   When calling `save_bundle()`, pass explicit `family` and `version` or rely on the registered model class. Mangosta auto-aligns the bundle manifest to match the registered model family and resolves normalized alphanumeric variations (e.g. `sensor_classifier` <-> `sensorclassifier`).
+5. **Tracking Standard: Always Generate `RunTracker`**:
    AI agents MUST default to generating `with RunTracker(experiment=..., run_name=...) as run:` for all production scripts, pipelines, and training loops.
    - `RunTracker` is the primary domain class with native `__enter__` and `__exit__` dunder methods, explicit typing, and full IDE autocompletion.
    - `quick_track` is preserved as a shorthand alias for 1-line interactive prototypes.
-5. **Log Step Metrics and Temporal Validation Samples**:
+6. **Log Step Metrics and Temporal Validation Samples**:
    - `run.log_metrics({"train_loss": ...}, step=step)`: Appends atomically to `metrics.jsonl`.
-   - `run.log_validation_sample(sample_id, prediction, input_image, ground_truth, step=step)`: Versions images across steps for the `mangosta view` temporal scrubber.
-6. **Automatic Checkpoints vs Final Inference Bundles**:
+   - `run.log_validation_sample(sample_id, prediction, input_image, ground_truth, step=step)`: Versions images across steps for the `uv run mangosta view` temporal scrubber.
+7. **Automatic Checkpoints vs Final Inference Bundles**:
    - Checkpoints: Pass `optimizer`, `scheduler`, and/or `scaler` to `save_bundle()`. Mangosta automatically marks the bundle as a checkpoint (`manifest["is_checkpoint"] = True`) and packages `train_state.pt` containing exact RNG seeds (PyTorch CPU/CUDA, NumPy, Python).
    - Inference bundles: Omit optimizer/scheduler to produce a lightweight, deployment-ready bundle containing only SafeTensors weights, manifest, and contract schema.
-7. **Verify Dynamic Batch Dimensions in Contracts**:
+8. **Verify Dynamic Batch Dimensions in Contracts**:
    Always pass `sample_input` to `save_bundle()` or use `infer_schema(model, sample_input)`. Dimension 0 is automatically converted to dynamic batching (`None`).
-8. **Decouple Production Serving**:
+9. **Decouple Production Serving**:
    For microservices and edge deployment, export via `export_onnx_as_bundle` or `export_onnx`. In production environments without PyTorch, import from `mangosta.serving` using `load_onnx_bundle` and `ONNXRunner`.
-9. **Machine-Readable Inspection in `< 5ms`**:
-   When inspecting `.bundle` archives programmatically, run `mangosta inspect <bundle> --json`. It parses little-endian binary SafeTensors headers directly with zero tensor allocations, saving thousands of LLM tokens.
-10. **Zero Background Daemons**:
-    `mangosta view` uses standard library `http.server`. It starts ephemerally and cleans up on shutdown. Never try to spin up background daemons, Postgres, or Redis.
+10. **Machine-Readable Inspection in `< 5ms`**:
+    When inspecting `.bundle` archives programmatically, run `uv run mangosta inspect <bundle> --json`. It parses little-endian binary SafeTensors headers directly with zero tensor allocations, saving thousands of LLM tokens.
+11. **Zero Background Daemons**:
+    `uv run mangosta view` uses standard library `http.server`. It starts ephemerally and cleans up on shutdown. Never try to spin up background daemons, Postgres, or Redis.
 
 ---
 
-## 4. Canonical Code Patterns
+## 5. Canonical Code Patterns
 
 ### Pattern 1: Architecture Registration & Contract Definition
 ```python
@@ -205,18 +216,18 @@ print(f"Inference output shape: {output.shape}")
 ### Pattern 6: Machine-Readable Inspection & Offline Reports
 ```bash
 # Programmatic inspection in < 5ms (returns structured JSON payload)
-mangosta inspect checkpoints/model_final.bundle --json
+uv run mangosta inspect checkpoints/model_final.bundle --json
 
 # Generate standalone offline HTML report
-mangosta report experiments/image_classification/baseline_adamw -o report.html
+uv run mangosta report experiments/image_classification/baseline_adamw -o report.html
 
 # Launch local browser visualizer with validation scrubber
-mangosta view
+uv run mangosta view
 ```
 
 ---
 
-## 5. Structured Exception Reference & Remediation
+## 6. Structured Exception Reference & Remediation
 
 | Exception | Root Cause | Programmatic Remediation (`hint`) |
 | :--- | :--- | :--- |

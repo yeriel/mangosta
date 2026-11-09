@@ -231,22 +231,25 @@ uv tool run zensical serve
 
 ---
 
-## Verification & Testing
+## Local Development & Testing
 
-Verify the test suite and static type checks locally:
+Build and verify the package locally:
 
 ```bash
-# Run complete test suite with coverage (>85%)
-uv run pytest -v --cov=mangosta
+# Build wheel and sdist distributions locally
+uv build
 
 # Run strict PEP 561 static type checks
 uv run mypy --config-file pyproject.toml src/mangosta
 
-# Offline test suite (zero network container)
-bash scripts/test_offline.sh
+# Run linter
+uv run ruff check src/mangosta
+```
 
-# Slim serving test (zero PyTorch container)
-bash scripts/test_slim_serving.sh
+To test in a separate project locally:
+```bash
+# In your test project directory:
+uv add --editable "/path/to/mangosta[all]"
 ```
 
 ---
