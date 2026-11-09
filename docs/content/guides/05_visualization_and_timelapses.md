@@ -36,37 +36,32 @@ Press Ctrl+C to terminate.
 
 ## 2. Tracking Metrics & Images During Training
 
-Log scalar metrics and visual artifacts using `ExperimentTracker`:
+Log scalar metrics and visual artifacts using `RunTracker`:
 
 ```python
 import torch
 import matplotlib.pyplot as plt
-from mangosta import ExperimentTracker
+from mangosta import RunTracker
 
-tracker = ExperimentTracker(experiment_name="generative", run_name="latent_vae_01")
+with RunTracker(experiment="generative", run_name="latent_vae_01") as tracker:
+    for epoch in range(1, 11):
+        # Simulated training metrics
+        train_loss = 1.0 / epoch
+        val_loss = 1.2 / epoch
+        
+        tracker.log_metrics(
+            {"loss": train_loss, "val_loss": val_loss, "lr": 1e-3 * (0.95 ** epoch)},
+            step=epoch,
+        )
 
-for epoch in range(1, 11):
-    # Simulated training step
-    train_loss = 1.0 / epoch
-    val_loss = 1.2 / epoch
-    
-    # Log scalar metrics
-    tracker.log_epoch(epoch, {
-        "loss": train_loss,
-        "val_loss": val_loss,
-        "learning_rate": 1e-3 * (0.95 ** epoch),
-    })
+        # Generate and log visual validation image
+        fig, ax = plt.subplots(figsize=(4, 4))
+        ax.imshow(torch.rand(28, 28).numpy(), cmap="inferno")
+        ax.set_title(f"Reconstruction - Epoch {epoch}")
+        ax.axis("off")
 
-    # Generate and log visual validation images
-    fig, ax = plt.subplots(figsize=(4, 4))
-    ax.imshow(torch.rand(28, 28).numpy(), cmap="inferno")
-    ax.set_title(f"Reconstruction - Epoch {epoch}")
-    ax.axis("off")
-
-    tracker.log_image("reconstructions", fig, step=epoch)
-    plt.close(fig)
-
-tracker.close()
+        tracker.log_image("reconstructions", fig, step=epoch)
+        plt.close(fig)
 ```
 
 ### Filesystem Structure
