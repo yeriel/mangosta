@@ -1095,10 +1095,10 @@ def _get_dashboard_html() -> str:
     </div>
 
     <div class="nav-tabs">
-      <button class="tab-btn active" data-tab="metrics" onclick="switchTab('metrics')">📈 Metrics & Runs</button>
-      <button class="tab-btn" data-tab="val" onclick="switchTab('val')">🖼️ Real Data Validation</button>
-      <button class="tab-btn" data-tab="bundles" onclick="switchTab('bundles')">📦 Bundle Inspector</button>
-      <button class="tab-btn" data-tab="meta" onclick="switchTab('meta')">📋 Run Metadata</button>
+      <button class="tab-btn active" data-tab="metrics" onclick="switchTab('metrics')">Metrics &amp; Runs</button>
+      <button class="tab-btn" data-tab="val" onclick="switchTab('val')">Real Data Validation</button>
+      <button class="tab-btn" data-tab="bundles" onclick="switchTab('bundles')">Bundle Inspector</button>
+      <button class="tab-btn" data-tab="meta" onclick="switchTab('meta')">Run Metadata</button>
     </div>
 
     <div class="top-actions">
@@ -1106,7 +1106,7 @@ def _get_dashboard_html() -> str:
         <span class="live-pulse"></span>
         <span id="live-text">LIVE WATCH</span>
       </div>
-      <button class="btn" onclick="refreshData()">↻ Refresh</button>
+      <button class="btn" onclick="refreshData()">Refresh</button>
     </div>
   </header>
 
@@ -1200,9 +1200,9 @@ def _get_dashboard_html() -> str:
           <div class="val-main">
             <div class="scrubber-bar">
               <div class="scrubber-controls">
-                <button class="btn" onclick="prevStep()">◀ Prev</button>
-                <button class="btn btn-primary" id="play-btn" onclick="togglePlayTimelapse()">▶ Play Timelapse</button>
-                <button class="btn" onclick="nextStep()">Next ▶</button>
+                <button class="btn" onclick="prevStep()">Prev</button>
+                <button class="btn btn-primary" id="play-btn" onclick="togglePlayTimelapse()">Play Timelapse</button>
+                <button class="btn" onclick="nextStep()">Next</button>
                 <input type="range" id="epoch-scrubber" class="scrubber-slider" min="0" max="0" value="0" oninput="onScrubStep(this.value)" />
               </div>
               <div style="font-family:var(--font-mono); font-weight:700; font-size:0.95rem; color:var(--amber);" id="scrubber-step-indicator">
@@ -1724,7 +1724,7 @@ def _get_dashboard_html() -> str:
         runs.forEach((r, idx) => {
           const color = PALETTE[idx % PALETTE.length];
           const closest = r.metrics[metricName].reduce((prev, curr) => Math.abs(curr.step - targetStep) < Math.abs(prev.step - targetStep) ? curr : prev);
-          tipRows += `<div style="display:flex; justify-content:space-between; gap:12px;"><span style="color:${color};">● ${r.run_name}</span><strong>${closest.value.toFixed(4)}</strong></div>`;
+          tipRows += `<div style="display:flex; justify-content:space-between; gap:12px; align-items:center;"><span><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${color}; margin-right:6px;"></span>${r.run_name}</span><strong>${closest.value.toFixed(4)}</strong></div>`;
         });
         tip.innerHTML = tipRows;
         tip.style.display = "block";
@@ -1872,9 +1872,9 @@ def _get_dashboard_html() -> str:
       if (playTimer) {
         clearInterval(playTimer);
         playTimer = null;
-        btn.textContent = "▶ Play Timelapse";
+        btn.textContent = "Play Timelapse";
       } else {
-        btn.textContent = "⏸ Pause";
+        btn.textContent = "Pause";
         playTimer = setInterval(() => {
           if (currentTimelineStepIdx >= currentSampleTimeline.length - 1) {
             currentTimelineStepIdx = 0;
@@ -1915,7 +1915,7 @@ def _get_dashboard_html() -> str:
             </div>
             <div class="val-card-img-wrap" onclick="openLightbox('${imgSrc}', '${art ? art.name : ''}')">
               ${imgSrc ? `<img src="${imgSrc}" alt="${r.title}" />` : `<div style="color:var(--text-muted); font-size:0.8rem;">No ${r.key} logged</div>`}
-              <span class="zoom-hint">🔍 Click to zoom</span>
+              <span class="zoom-hint">Click to zoom</span>
             </div>
           </div>
         `;

@@ -156,7 +156,7 @@ def inspect_bundle(bundle_path: str, as_json: bool = False) -> None:
         print(f"\nModel Tensors / Layers ({len(tensors_info)} total):")
         display_tensors = tensors_info[:15]
         for t in display_tensors:
-            print(f"  • {t['name']}: shape={t['shape']}, dtype={t['dtype']}")
+            print(f"  - {t['name']}: shape={t['shape']}, dtype={t['dtype']}")
         if len(tensors_info) > 15:
             print(f"  ... and {len(tensors_info) - 15} more tensors (use --json for full list)")
 
