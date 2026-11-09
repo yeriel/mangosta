@@ -48,6 +48,9 @@ serving = [
 onnx = [
     "onnx>=1.14.0",
 ]
+docs = [
+    "zensical>=0.1.0",
+]
 all = [
     "torch>=2.0.0",
     "safetensors>=0.4.0",

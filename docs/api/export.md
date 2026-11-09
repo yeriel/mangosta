@@ -63,3 +63,20 @@ export_onnx(
     as_bundle=True,
 )
 ```
+
+
+---
+
+## `export_onnx_as_bundle`
+
+Convenience alias for `export_onnx(..., as_bundle=True)`.
+
+```python
+from mangosta import export_onnx_as_bundle
+
+bundle_path = export_onnx_as_bundle(
+    model,
+    "deploy/classifier.onnx.bundle",
+    sample_input=sample_tensor,
+)
+```

@@ -31,6 +31,10 @@ MANIFEST
 .coverage.*
 htmlcov/
 
+# Documentation build output
+site/
+.zensical/
+
 # Local data & temp files
 data/
 runs/
