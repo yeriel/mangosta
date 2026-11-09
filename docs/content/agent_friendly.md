@@ -1,122 +1,82 @@
-# 100% Agent-Friendly Design
+# 100% Agent-Friendly & CLI Reference
 
-> Mangosta was engineered from day one as a dual-interface library: intuitive and Pythonic for human engineers, yet deterministic, zero-allocation, and structured for autonomous AI coding agents.
-
-Modern AI coding agents (such as Google Antigravity, Claude Code, Cursor, Codex, and OpenHands) frequently struggle with traditional MLOps tools. Opaque binary files, heavyweight background daemons, dynamic imports that swallow exceptions, and unstructured text outputs lead to high token burn, hallucinations, and out-of-memory crashes.
-
-Mangosta solves this with **first-class agent ergonomics**.
+> Mangosta is designed for both human engineers and autonomous AI coding agents (Antigravity, Claude Code, Cursor, Codex). Every CLI command and exception is structured to eliminate token waste, memory overhead, and guesswork.
 
 ---
 
-## 1. Sub-5ms CLI Inspection with Zero-Allocation Header Parsing
+## 1. Sub-5ms Zero-PyTorch Inspection (`inspect --json`)
 
-When an agent needs to inspect a 10 GB model checkpoint, loading PyTorch into memory via `torch.load()` takes several seconds, consumes gigabytes of VRAM/RAM, and risks crashing the agent's execution environment.
+When an AI agent needs to check a `.bundle` checkpoint, calling `torch.load()` in Python takes seconds and allocates gigabytes of RAM/VRAM.
 
-Mangosta implements a pure-Python, zero-allocation SafeTensors binary header parser in `inspect_bundle`:
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Agent as Autonomous AI Agent
-    participant CLI as mangosta inspect --json
-    participant ZIP as Bundle ZIP Archive
-    participant HDR as SafeTensors Header
-
-    Agent->>CLI: mangosta inspect models/best.bundle --json
-    CLI->>ZIP: Open archive stream (no decompression)
-    CLI->>HDR: Read first 8 bytes (uint64 length N)
-    CLI->>HDR: Read exactly N bytes of JSON metadata
-    CLI->>Agent: Return pure JSON in < 5 milliseconds
-    Note over CLI,Agent: Zero PyTorch imported, Zero weights allocated
-```
-
-### Why Agents Benefit
-- **Execution Speed**: Benchmarked at `< 5ms` on modern SSDs.
-- **Minimal Token Usage**: Agents receive clean, structured JSON containing exact layer shapes, parameter counts, and dtypes without noisy stdout junk.
-- **Zero Memory Pressure**: Agents can inspect massive foundation models without reserving GPU memory or risking OOM kills.
+Mangosta's `inspect --json` reads only `manifest.json` and the 8-byte little-endian (`struct.unpack("<Q")`) SafeTensors header directly from the ZIP stream—**without importing PyTorch or decompressing weights**:
 
 ```bash
-mangosta inspect checkpoints/epoch_10.bundle --json
+uv run mangosta inspect checkpoints/epoch_3.bundle --json
 ```
 
 ```json
 {
-  "bundle_path": "checkpoints/epoch_10.bundle",
-  "status": "valid",
-  "family": "resnet_classifier",
+  "file": {
+    "name": "epoch_3.bundle",
+    "path": "/workspace/checkpoints/epoch_3.bundle",
+    "size_bytes": 14208
+  },
+  "family": "tabular_classifier",
   "version": "1.0.0",
+  "format": "safetensors",
+  "weights_size_bytes": 2432,
+  "weights_sha256": "4b9e4a3b8c7e2f1d...",
   "is_checkpoint": true,
-  "weights_format": "safetensors",
-  "weights_sha256": "4b6a9f2...",
-  "total_parameters": 11176512,
-  "architecture": {
-    "layers": {
-      "conv1.weight": { "shape": [64, 3, 7, 7], "dtype": "F32", "num_parameters": 9408 }
-    }
-  }
+  "epoch": 3,
+  "step": 15,
+  "schema": {
+    "inputs": [{"name": "input_0", "shape": [null, 8], "dtype": "float32"}],
+    "outputs": [{"name": "output_0", "shape": [null, 2], "dtype": "float32"}],
+    "input_structure": "tensor",
+    "output_structure": "tensor"
+  },
+  "metrics": {"val_loss": 0.281},
+  "files": ["manifest.json", "model.safetensors", "train_state.pt"],
+  "tensors": [
+    {"name": "net.0.weight", "shape": [32, 8], "dtype": "F32"},
+    {"name": "net.0.bias", "shape": [32], "dtype": "F32"}
+  ]
 }
 ```
 
 ---
 
-## 2. Structured Error Codes with Remediation Hints
+## 2. Embedded Agent Context (`.agents/mangosta.md` & `SKILL.md`)
 
-When code fails in standard libraries, stack traces often lack actionable context. Autonomous agents are left guessing how to repair the issue.
-
-Mangosta equips every internal exception with an explicit error code and a human/agent-readable `hints` list:
-
-```python
-try:
-    cls, ver = ModelRegistry.get_model_cls("vision_transformer", "2.0.0")
-except ModelNotFoundError as e:
-    print(e.code)   # "MODEL_FAMILY_NOT_FOUND"
-    print(e.hints)  # Actionable remediation instructions
-```
-
-### Example: Architectural Collision
-
-When an agent accidentally registers the same model family and version twice:
-
-```text
-RegistryCollisionError [MANG_REG_001]: Model family 'mlp' version '1.0.0' is already registered.
-Remediation Hints:
-  1. Increment the semantic version string (e.g., version='1.0.1' or version='1.1.0').
-  2. If re-registering during an interactive session, pass allow_override=True.
-  3. Ensure multiple files do not define conflicting @register_model decorators for the same family.
-```
-
-The agent reads the structured hint and immediately applies the correct fix on its next iteration.
+1. **Project Scaffolding (`mangosta init`)**:
+   Running `uv run mangosta init my_project` automatically generates `.agents/mangosta.md` inside the project with all architectural rules, so any AI agent opening the repository knows immediately how to register models, track runs, and save bundles.
+2. **Native Antigravity Skill (`skills/mangosta/SKILL.md`)**:
+   Ships directly in the repository with canonical copy-paste patterns for training, bit-to-bit resumption, and zero-PyTorch ONNX serving.
 
 ---
 
-## 3. Autonomous Context File: `.agents/mangosta.md`
+## 3. Actionable Exception Hierarchy
 
-Running `mangosta init <project>` automatically scaffolds an agent context instruction file at `.agents/mangosta.md`. 
+Instead of generic `RuntimeError` or `KeyError` tracebacks, Mangosta raises specific, self-explanatory exceptions from `mangosta.exceptions` with remediation guidance in the message:
 
-This file acts as an embedded system prompt for coding agents entering the codebase, defining:
-1. **Repository Layout**: Where models, configs, artifacts, and training scripts reside.
-2. **Coding Standards**: Prohibition of `pickle`, strict type hints with `py.typed`, and semantic versioning rules.
-3. **Execution Commands**: Verified commands for running tests (`pytest`), checking types (`mypy`), inspecting bundles (`mangosta inspect`), and serving models (`mangosta serve`).
-
-By referencing this file, agents operate with full context and zero configuration friction.
-
----
-
-## 4. Zero Background Daemons & Clean File Lifecycles
-
-Agents frequently run in containerized sandboxes with restricted network capabilities or background process constraints.
-
-- **No Zombie Daemons**: Mangosta does not start background supervisor daemons, Postgres instances, or Celery workers.
-- **Deterministic Cleanup**: The visual analytics UI (`mangosta view`) runs in the foreground or as a child process and terminates cleanly with `SIGINT` / `SIGTERM`.
-- **Pure Local IO**: All operations read and write to standard filesystem paths, making sandbox sandboxing completely friction-free.
+| Exception | When It Is Raised | How to Fix It |
+| :--- | :--- | :--- |
+| `RegistryCollisionError` | Registering an existing `(family, version)` pair twice. | Bump the semantic version (`"1.1.0"`) or pass `allow_override=True`. |
+| `ModelNotFoundError` | `ModelRegistry` cannot find the requested family/version. | Import the module where `@register_model` is defined before loading. |
+| `SchemaValidationError` | Input tensor/NumPy array shape or `dtype` violates `ModelSchema`. | Match the expected shape and `dtype` shown in `runner.schema.inputs`. |
+| `BundleCorruptedError` | Missing archive files or SHA-256 checksum mismatch on `model.safetensors` / `model.onnx`. | Re-export the bundle from a verified checkpoint. |
+| `ResumeStateError` | Calling `resume_training()` on an inference bundle that lacks `train_state.pt`. | Pass `optimizer=` when calling `save_bundle()` to save a resumable checkpoint. |
 
 ---
 
-## 5. Built-in Antigravity Skill Integration
+## 4. Complete CLI Reference
 
-Mangosta ships with a preconfigured Antigravity CLI skill under `skills/mangosta/SKILL.md`.
+All CLI commands are invoked via `uv run mangosta <command>`:
 
-When developing with Google Antigravity or compatible agentic systems, the skill is automatically recognized, granting the agent:
-- Deep awareness of Mangosta's public API and conventions.
-- Standard recipe patterns for fast prototyping, checkpoint resumption, and production deployment.
-- Recommended debugging protocols for tensor schema mismatches and ONNX export failures.
+| Command & Flags | Description |
+| :--- | :--- |
+| `mangosta init [name] [--template default]` | Scaffold a Clean Architecture PyTorch project (`configs/`, `src/`, `entrypoints/`, `.agents/mangosta.md`). |
+| `mangosta inspect <bundle> [--json]` | Inspect bundle manifest, `ModelSchema` contract, and SafeTensors layer shapes in `< 5ms`. |
+| `mangosta view [target] [--port 8501] [--no-browser]` | Start the zero-daemon local browser dashboard for `target` directory or `.bundle`. |
+| `mangosta report <target> [-o report.html]` | Generate a standalone, offline interactive HTML report for a run directory or `.bundle`. |
+| `mangosta export-onnx <bundle> -o <out> [--input-shape ...] [--output-mapping ...] [--fp16] [--opset 18] [-m module]` | Export a `.bundle` directly to standalone `.onnx` or `.onnx.bundle`. |

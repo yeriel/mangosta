@@ -1,85 +1,126 @@
-# Guide 3: Production Serving & Tensor Contracts
+# Guide 03: Export, `<5ms` Inspection & Reports
 
-Deploying PyTorch models directly into production often introduces serious operational headaches:
-1. **Container Bloat**: Docker images carrying PyTorch and CUDA toolchains typically weigh `2.5GB - 6GB`.
-2. **Cold Start Latency**: Importing PyTorch and compiling model graphs slows down Kubernetes pod scaling and serverless invocations.
-3. **Data Drift & Silent Corruption**: Production inference receiving incorrect tensor dimensions or integer types instead of floats causes silent degradation or cryptic C++ segmentation faults.
+> **Companion script:** [`examples/03_model_export_and_inspection.py`](https://github.com/yeriel/mangosta/blob/main/examples/03_model_export_and_inspection.py)  
+> **Run it locally:** `uv run python examples/03_model_export_and_inspection.py`
 
-`mangosta` solves this via **ONNX Bundles (`.onnx.bundle`)** and **Slim Serving (`mangosta[serving]`)**.
+This guide covers how to export models (including multi-output dictionary models) to standalone `.onnx` or contract-verified `.onnx.bundle` archives, inspect bundles in `< 5ms`, and generate offline HTML reports.
 
 ---
 
-## 1. Exporting an ONNX Bundle
+## Step 1: Multi-Output Models & `output_mapping`
 
-Export your trained `.bundle` to an optimized `.onnx.bundle` package:
-
-```bash
-mangosta export-onnx checkpoints/epoch_10.bundle \
-    -o exports/model.onnx.bundle \
-    --input-shape 1 8 \
-    --fp16 \
-    -m src.models.classifier
-```
-
-Or via Python:
+Real-world vision and NLP models often return a `dict[str, torch.Tensor]` (e.g., `{"logits": ..., "bbox": ...}`). Mangosta's `export_onnx` and `export_onnx_as_bundle` accept `output_mapping` to cleanly unroll dictionary outputs into positional ONNX graph outputs:
 
 ```python
 import torch
-from mangosta import export_onnx
+import torch.nn as nn
+from mangosta import ModelRegistry, register_model, save_bundle
 
-export_onnx(
-    model_or_bundle="checkpoints/epoch_10.bundle",
-    output_path="exports/model.onnx.bundle",
-    sample_input_shape=(1, 8),
-    float16=True,
-    as_bundle=True,
+@register_model(family="multitask_detector", version="1.0.0")
+class MultiTaskDetector(nn.Module):
+    def __init__(self, in_channels: int = 3, feature_dim: int = 16) -> None:
+        super().__init__()
+        self.backbone = nn.Sequential(
+            nn.Conv2d(in_channels, feature_dim, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool2d((1, 1)),
+            nn.Flatten(),
+        )
+        self.classifier_head = nn.Linear(feature_dim, 2)
+        self.bbox_head = nn.Linear(feature_dim, 4)
+
+    def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
+        feat = self.backbone(x)
+        return {"logits": self.classifier_head(feat), "bbox": self.bbox_head(feat)}
+
+model = ModelRegistry.build("multitask_detector", version="1.0.0")
+sample_input = torch.randn(1, 3, 64, 64)
+
+save_bundle(
+    output_path="detector.bundle",
+    model=model,
+    family="multitask_detector",
+    version="1.0.0",
+    sample_input=sample_input,
+    metrics={"val_iou": 0.884, "val_acc": 0.942},
 )
 ```
 
-The resulting `.onnx.bundle` is a standard ZIP file containing:
-- `manifest.json`: Cryptographic SHA-256 fingerprint, model family, version, and formal `schema`.
-- `model.onnx`: Standalone ONNX computation graph.
-- `config.yaml`: Frozen hyperparameters and pre-processing contracts.
+---
+
+## Step 2: Export to `.onnx` or `.onnx.bundle`
+
+Requires `uv add "mangosta[onnx]"`:
+
+```python
+from mangosta import export_onnx, export_onnx_as_bundle
+
+# 1. Export standalone .onnx with dynamic batch axes and graph verification
+export_onnx(
+    model_or_bundle="detector.bundle",
+    output_path="detector.onnx",
+    sample_input_shape=(1, 3, 64, 64),
+    output_mapping=["logits", "bbox"],
+    input_names=["input_tensor"],
+    output_names=["pred_logits", "pred_bbox"],
+    dynamic_axes={
+        "input_tensor": {0: "batch_size"},
+        "pred_logits": {0: "batch_size"},
+        "pred_bbox": {0: "batch_size"},
+    },
+    float16=False,
+    verify=True,
+)
+
+# 2. Export self-contained .onnx.bundle (includes manifest.json + ModelSchema + model.onnx)
+export_onnx_as_bundle(
+    bundle_or_model="detector.bundle",
+    output_path="detector.onnx.bundle",
+    sample_input=sample_input,
+    output_mapping=["logits", "bbox"],
+    input_names=["input_tensor"],
+    output_names=["pred_logits", "pred_bbox"],
+)
+```
+
+Or directly from the CLI:
+
+```bash
+uv run mangosta export-onnx detector.bundle \
+    -o detector.onnx.bundle \
+    --input-shape 1 3 64 64 \
+    --output-mapping logits bbox \
+    -m my_project.models
+```
 
 ---
 
-## 2. Zero-PyTorch Slim Serving
+## Step 3: Sub-5ms Inspection (`mangosta inspect`)
 
-In your production API container (e.g. FastAPI, Triton, or Flask), install only the slim dependencies:
+Inspect any `.bundle` or `.onnx.bundle` without importing PyTorch or loading weights into memory. Mangosta reads the 8-byte little-endian SafeTensors binary header directly from the ZIP stream:
 
 ```bash
-pip install "mangosta[serving]"
-# or
-pip install mangosta onnxruntime
+# Human-readable summary in terminal
+uv run mangosta inspect detector.bundle
+
+# Machine-readable JSON (ideal for CI/CD and AI agents)
+uv run mangosta inspect detector.bundle --json
 ```
 
-Notice: **PyTorch is NOT installed**. The container size drops from **~3GB down to ~70MB**.
+---
 
-### Serving Code (`server.py`):
+## Step 4: Offline Interactive HTML Reports (`mangosta report`)
+
+Generate a standalone, single-file `report.html` summarizing a training run or model bundle (shareable via Slack or email, zero servers required):
+
+```bash
+uv run mangosta report detector.bundle -o detector_report.html
+```
+
+Or from Python:
 
 ```python
-from fastapi import FastAPI, HTTPException
-import numpy as np
-from mangosta import ONNXRunner
-from mangosta.exceptions import SchemaValidationError
+from mangosta import generate_report
 
-app = FastAPI(title="ML Microservice")
-
-# Load directly from the verified ONNX bundle archive
-runner = ONNXRunner("exports/model.onnx.bundle")
-
-@app.post("/predict")
-def predict(features: list[float]):
-    input_data = np.array([features], dtype=np.float32)
-
-    try:
-        # Executes inference with automatic tensor contract validation
-        predictions = runner.predict(input_data)
-        return {"predictions": predictions.tolist()}
-    except SchemaValidationError as e:
-        raise HTTPException(status_code=422, detail=f"Data contract violation: {e}")
+generate_report("detector.bundle", "detector_report.html")
 ```
-
-### Automatic Protections:
-- **Shape & Dtype Verification**: If a client sends an input with 7 features instead of 8, or passes an invalid data type, `runner.predict()` rejects it before calling the C++ inference engine.
-- **Output Container Preservation**: If your original model returned a dictionary (`{"logits": ..., "probs": ...}`), `runner.predict()` automatically formats the output back into the expected dictionary.

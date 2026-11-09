@@ -1,81 +1,80 @@
-# Guide 2: Fault Tolerance & Deterministic Resumption
+# Guide 02: Checkpoints & Deterministic Resume
 
-In long-running PyTorch training runs (especially on spot instances, SLURM clusters, or shared GPU nodes), preemption and unexpected interruptions (`SIGINT`, `SIGTERM`, spot reclamation) are common.
+> **Companion script:** [`examples/02_model_checkpoint_and_deterministic_resume.py`](https://github.com/yeriel/mangosta/blob/main/examples/02_model_checkpoint_and_deterministic_resume.py)  
+> **Run it locally:** `uv run python examples/02_model_checkpoint_and_deterministic_resume.py`
 
-Standard PyTorch checkpoints often fail to guarantee deterministic resumption because they omit:
-1. Learning rate scheduler state and warmup counters.
-2. AMP (Automatic Mixed Precision) `GradScaler` internal loss scale values.
-3. Random Number Generator (RNG) states across PyTorch CPU, PyTorch CUDA (all devices), Python's `random`, and NumPy's `np.random`.
+When a training run is interrupted (spot instance preemption, SLURM timeout, or `Ctrl+C`), standard PyTorch checkpoints often fail to resume deterministically because they lose the state of random number generators (RNG) and learning rate schedulers.
 
-`mangosta` solves this by treating checkpoint bundles as atomic, complete state snapshots.
+Mangosta guarantees **100% bit-to-bit repeatable resumption**.
 
 ---
 
-## 1. Saving a Fault-Tolerant Checkpoint
+## Step 1: Save a Crash-Consistent Checkpoint
 
-When saving a checkpoint, pass your optimizer, scheduler, and optional scaler directly to `save_bundle`:
+When you pass `optimizer` (and optionally `scheduler` or `scaler`) to `save_bundle`, Mangosta automatically marks `is_checkpoint=True` and captures:
+- Model weights in `model.safetensors` (Zero-Pickle + SHA-256).
+- Optimizer, scheduler, and AMP `GradScaler` states.
+- All 4 RNG states: **PyTorch CPU**, **PyTorch CUDA (all GPUs)**, **NumPy**, and **Python `random`**.
 
 ```python
 import torch
 from mangosta import save_bundle
 
-# In your training loop:
 save_bundle(
-    output_path=f"checkpoints/epoch_{epoch}.bundle",
+    output_path="checkpoints/checkpoint_epoch2.bundle",
     model=model,
-    family="mlp_classifier",
+    family="resumable_classifier",
     version="1.0.0",
-    sample_input=torch.randn(1, 8),
+    init_args={"in_features": 16, "hidden_dim": 32, "num_classes": 4},
+    sample_input=torch.randn(1, 16),
     optimizer=optimizer,
     scheduler=scheduler,
-    scaler=scaler,                  # Optional torch.cuda.amp.GradScaler
-    epoch=epoch,
-    step=global_step,
-    metrics={"val_loss": val_loss, "val_acc": val_acc},
-    config="configs/baseline.yaml",
+    epoch=2,
+    step=6,
+    metrics={"checkpoint_loss": float(loss.item())},
 )
 ```
 
-### What Happens Internally:
-- Model weights are written in SafeTensors format (zero pickle, memory-mapped read speed).
-- `_capture_rng_states()` snapshots:
-  - `torch.get_rng_state()`
-  - `torch.cuda.get_rng_state_all()` (for multi-GPU CUDA nodes)
-  - `random.getstate()`
-  - `np.random.get_state()`
-- The bundle is written to a temporary file `.tmp_<pid>_<uuid>` and atomically replaced (`os.replace`), guaranteeing that a mid-write crash never corrupts existing checkpoints.
+> **Atomic Write Guarantee:** `save_bundle` writes to a temporary file `.tmp_<pid>_<uuid>` first and executes an atomic `os.replace` only after all bytes are flushed. A power cut mid-save will never corrupt your previous checkpoint.
 
 ---
 
-## 2. Resuming Training Deterministically
+## Step 2: Resume Training Bit-to-Bit (`resume_training`)
 
-When restarting after an interruption, initialize fresh instances of your model, optimizer, and scheduler, and invoke `resume_training`:
+After a crash or restart, instantiate fresh instances of your model, optimizer, and scheduler, and call `resume_training(..., restore_rng=True)`:
 
 ```python
-import torch
-from mangosta import resume_training, ModelRegistry
+import torch.optim as optim
+from mangosta import ModelRegistry, resume_training
 
-# 1. Reconstruct model architecture from registry
-model = ModelRegistry.build("mlp_classifier", version="1.0.0", in_features=8, hidden_dim=32)
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5)
+# 1. Build fresh instances
+fresh_model = ModelRegistry.build("resumable_classifier", version="1.0.0")
+fresh_opt = optim.Adam(fresh_model.parameters(), lr=1e-3)
+fresh_sched = optim.lr_scheduler.StepLR(fresh_opt, step_size=2, gamma=0.5)
 
-# 2. Restore weights, optimizer, scheduler, and all RNG generators
+# 2. Restore weights, optimizer, scheduler, and all 4 RNG generators
 state = resume_training(
-    bundle_path="checkpoints/epoch_4.bundle",
-    model=model,
-    optimizer=optimizer,
-    scheduler=scheduler,
+    bundle_path="checkpoints/checkpoint_epoch2.bundle",
+    model=fresh_model,
+    optimizer=fresh_opt,
+    scheduler=fresh_sched,
     restore_rng=True,
-    map_location="cuda" if torch.cuda.is_available() else "cpu",
 )
 
-# 3. Resume seamlessly at the exact next step
-start_epoch = (state.epoch or 0) + 1
-start_step = state.step or 0
+print(f"Resumed at epoch {state.epoch}, step {state.step} (RNG restored: {state.rng_restored})")
 
-print(f"Resumed from epoch {state.epoch}, step {state.step}. Prior metrics: {state.metrics}")
+# 3. Continue training from the next epoch
+for epoch in range(state.epoch + 1, total_epochs + 1):
+    ...
 ```
 
-### Bit-to-Bit Determinism Guarantee:
-Because all RNG generators are restored to their exact state at checkpoint time, dropout masks, data shuffling iterators, and stochastic gradient updates will match the uninterrupted run bit-for-bit.
+---
+
+## What `ResumeState` Returns
+
+| Attribute | Type | Description |
+| :--- | :--- | :--- |
+| `state.epoch` | `int \| None` | Last completed epoch saved in the checkpoint (`state.epoch + 1` is the next epoch). |
+| `state.step` | `int \| None` | Global training step saved in the checkpoint. |
+| `state.metrics` | `dict[str, float]` | Validation/training metrics recorded when the checkpoint was saved. |
+| `state.rng_restored` | `bool` | `True` when CPU, CUDA, NumPy, and Python RNG states were restored. |

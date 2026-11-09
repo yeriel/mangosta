@@ -1,125 +1,119 @@
-# Installation
+# Installation & Flags
 
-Mangosta is lightweight, modular, and fast to install. It can run in minimal environments with standard PyTorch or with optional extras for ONNX acceleration and production microservice serving.
+Mangosta uses **`uv`** as the standard environment and package manager.
 
----
-
-## Quick Install
-
-=== "pip"
-    ```bash
-    pip install mangosta
-    ```
-
-=== "uv"
-    ```bash
-    uv add mangosta
-    ```
+Because Mangosta is designed for both **PyTorch training** and **Zero-PyTorch production microservices**, its dependencies are split into lightweight feature flags (extras). This ensures a production container never has to download `2.5GB+` of PyTorch just to run inference.
 
 ---
 
-## Optional Extras
+## 1. Standard Setup with `uv` (Recommended)
 
-Mangosta provides modular installation targets to keep core dependencies lean:
+Always create an isolated `uv` environment in your project before installing Mangosta:
 
 ```bash
-# Production HTTP serving (FastAPI, Uvicorn, Pydantic)
-pip install "mangosta[serving]"
+# 1. Initialize project or virtual environment
+uv venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-# ONNX export and high-performance CPU/GPU runtime
-pip install "mangosta[onnx]"
-
-# Development, testing, and static analysis tools
-pip install "mangosta[dev]"
-
-# Documentation tools (Zensical)
-pip install "mangosta[docs]"
-
-# Install everything
-pip install "mangosta[all]"
+# 2. Install Mangosta according to your environment's role:
 ```
 
-### Dependency Breakdown
+=== "Full Toolkit (`[all]`)"
+    Use this on your development workstation or laptop when you want **training, ONNX export, and local serving** all in one place:
+    ```bash
+    uv add "mangosta[all]"
+    ```
 
-| Extra Target | Included Packages | Purpose |
-| :--- | :--- | :--- |
-| **Core** | `torch`, `safetensors`, `pyyaml`, `click` | Core registry, bundle packaging, SafeTensors IO, CLI |
-| **`[serving]`** | `fastapi`, `uvicorn`, `pydantic` | Microservice generation and production contract endpoints |
-| **`[onnx]`** | `onnx`, `onnxruntime` | ONNX model export, validation, and zero-PyTorch inference |
-| **`[dev]`** | `pytest`, `pytest-cov`, `mypy`, `ruff` | Test suite, coverage reporting, and strict type verification |
-| **`[docs]`** | `zensical` | Fast documentation static site generator |
+=== "Training Only (`[train]`)"
+    Use this on GPU training nodes where you need **PyTorch + SafeTensors** for training, tracking, and checkpointing:
+    ```bash
+    uv add "mangosta[train]"
+    # Alias also supported: uv add "mangosta[torch]"
+    ```
+
+=== "Production Serving (`[serving]`)"
+    Use this inside production Docker microservices. **Does NOT install PyTorch** (`~70MB` image instead of `~2.5GB`):
+    ```bash
+    uv add "mangosta[serving]"
+    ```
+
+=== "ONNX Export (`[onnx]`)"
+    Add this when exporting `.bundle` models to `.onnx` or `.onnx.bundle` with graph verification:
+    ```bash
+    uv add "mangosta[train,onnx]"
+    ```
 
 ---
 
-## Air-Gapped & Offline Installation
+## 2. Complete Installation Flags Matrix
 
-Mangosta is designed to operate seamlessly in secure enclaves and air-gapped clusters without outbound internet access.
+Here is every installation flag defined in `pyproject.toml` and what it installs:
 
-### 1. Download Wheels on an Internet-Connected Machine
+| Flag / Extra | Command | Installed Packages | When to Use |
+| :--- | :--- | :--- | :--- |
+| **Base** *(no flags)* | `uv add mangosta` | `numpy`, `pyyaml`, `packaging` | Minimal contract validation (`ModelSchema`), CLI inspection (`mangosta inspect`), and manifest reading. |
+| **`[train]`** / **`[torch]`** | `uv add "mangosta[train]"` | `torch>=2.0`, `safetensors>=0.4` | Training models, `@register_model`, `RunTracker`, `save_bundle`, and `resume_training`. |
+| **`[serving]`** | `uv add "mangosta[serving]"` | `onnxruntime>=1.16`, `numpy`, `pyyaml`, `packaging` | **Zero-PyTorch** production inference with `load_onnx_bundle` and `ONNXRunner`. |
+| **`[onnx]`** | `uv add "mangosta[onnx]"` | `onnx>=1.14` | Exporting PyTorch models via `export_onnx` and `export_onnx_as_bundle`. |
+| **`[all]`** | `uv add "mangosta[all]"` | `torch`, `safetensors`, `onnx`, `onnxruntime` | Complete end-to-end workflow (Training + Export + Serving). |
+| **`[docs]`** | `uv add "mangosta[docs]"` | `zensical>=0.1.0` | Building and previewing the documentation locally (`cd docs && uv tool run zensical serve`). |
+| **`--group dev`** | `uv sync --group dev` | `pytest`, `pytest-cov`, `mypy`, `ruff`, `onnxscript` | Contributing to Mangosta, running unit tests, and strict type checking. |
 
-Create a local wheelhouse containing Mangosta and all its dependencies:
+---
 
-=== "pip"
-    ```bash
-    mkdir -p ./mangosta_wheels
-    pip download "mangosta[all]" -d ./mangosta_wheels
-    ```
+## 3. Selecting PyTorch CPU vs. CUDA in `uv`
 
-=== "uv"
-    ```bash
-    mkdir -p ./mangosta_wheels
-    uv pip download "mangosta[all]" -d ./mangosta_wheels
-    ```
+By default on Linux, PyTorch installs CUDA wheels. If you are on a CPU-only laptop or CI runner, you can configure `uv` in your `pyproject.toml` to pull lightweight CPU wheels (just like Mangosta's own repository does):
 
-### 2. Transfer to Air-Gapped Host
+```toml
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu" }
+]
 
-Archive the directory and transfer via approved secure media (e.g., USB drive, secure bastion, internal artifactory):
-
-```bash
-tar -czvf mangosta_wheels.tar.gz ./mangosta_wheels
-# Transfer mangosta_wheels.tar.gz to air-gapped machine
-tar -xzvf mangosta_wheels.tar.gz
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 ```
 
-### 3. Install Offline Without Network Access
-
-Install directly from the local directory:
+Or install directly via `uv pip` passing the index URL:
 
 ```bash
-pip install --no-index --find-links=./mangosta_wheels mangosta
-```
-
-Verify that no outbound network sockets are attempted:
-
-```bash
-python -c "import mangosta; print('Mangosta version:', mangosta.__version__)"
-mangosta --version
+uv pip install "mangosta[all]" --extra-index-url https://download.pytorch.org/whl/cpu
 ```
 
 ---
 
-## Verification
+## 4. Working From This Repository (Contributors & Examples)
 
-Run the CLI help command to confirm that your installation and entry points are functioning correctly:
+If you cloned the `mangosta` repository to run the [`examples/`](examples.md) or tests:
 
 ```bash
-mangosta --help
+# Create environment and sync all dev + training + ONNX dependencies
+uv sync --group dev
+
+# Run any example inside the uv environment
+uv run python examples/01_lifecycle_training_vs_production.py
+
+# Verify CLI
+uv run mangosta --help
 ```
 
-You should see the command group:
-```text
-Usage: mangosta [OPTIONS] COMMAND [ARGS]...
+---
 
-  Mangosta CLI: Lightweight MLOps & Model Lifecycle Management.
+## 5. Offline / Air-Gapped Installation
 
-Options:
-  --version  Show the version and exit.
-  --help     Show this message and exit.
+To deploy in environments without internet access:
 
-Commands:
-  init     Scaffold a new production-ready project.
-  inspect  Inspect a model bundle or checkpoint file.
-  report   Generate an execution report for runs or experiments.
-  serve    Start a production FastAPI server for a bundle.
-  view     Launch local visual analytics dashboard.
+```bash
+# 1. On a machine with internet: download wheels
+mkdir -p ./wheels
+uv pip compile pyproject.toml --extra all -o requirements.txt
+pip download -r requirements.txt -d ./wheels
+pip download . --no-deps -d ./wheels
+
+# 2. On the air-gapped machine: install offline into uv venv
+uv venv
+uv pip install --no-index --find-links=./wheels "mangosta[all]"
 ```

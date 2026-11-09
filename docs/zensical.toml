@@ -13,16 +13,16 @@ edit_uri = "edit/main/docs/content/"
 
 nav = [
   { "Overview" = "index.md" },
-  { "Philosophy & Vision" = "philosophy_and_vision.md" },
-  { "Installation" = "installation.md" },
-  { "100% Agent-Friendly" = "agent_friendly.md" },
-  { "Guides" = [
-      { "1. Fast Prototyping" = "guides/01_fast_prototyping.md" },
-      { "2. Fault Tolerance & Resumption" = "guides/02_fault_tolerance_and_resumption.md" },
-      { "3. Production Serving & Contracts" = "guides/03_production_serving_and_contracts.md" },
-      { "4. Autonomous AI Agents & CLI" = "guides/04_ai_agents_and_cli.md" },
-      { "5. Visual Tracking & Timelapses" = "guides/05_visualization_and_timelapses.md" },
+  { "Installation & Flags" = "installation.md" },
+  { "Philosophy & Vision (80/20)" = "philosophy_and_vision.md" },
+  { "Step-by-Step Guides" = [
+      { "01. Lifecycle: Train vs. Prod" = "guides/01_fast_prototyping.md" },
+      { "02. Checkpoints & Resume" = "guides/02_fault_tolerance_and_resumption.md" },
+      { "03. Export, Inspect & Reports" = "guides/03_production_serving_and_contracts.md" },
+      { "04. Visual Tracking & View" = "guides/05_visualization_and_timelapses.md" },
   ] },
+  { "100% Agent-Friendly & CLI" = "agent_friendly.md" },
+  { "Runnable Examples" = "examples.md" },
   { "API Reference" = [
       { "mangosta.core" = "api/core.md" },
       { "mangosta.artifacts" = "api/artifacts.md" },
@@ -31,7 +31,6 @@ nav = [
       { "mangosta.serving" = "api/serving.md" },
       { "mangosta.core.schema" = "api/schema.md" },
   ] },
-  { "Examples" = "examples.md" },
 ]
 
 [project.theme]

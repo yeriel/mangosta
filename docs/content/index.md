@@ -1,127 +1,113 @@
 # Mangosta
 
 > **Lightweight MLOps and Model Lifecycle Management for PyTorch.**  
-> Simple by default, strict on demand. Built for humans, 100% agent-friendly.
+> Train with PyTorch. Track without daemons. Serve in ~70MB containers without PyTorch.
+
+---
+
+## Quick Install (with `uv`)
+
+Mangosta is designed to be used inside a **`uv`** virtual environment. It separates heavy training dependencies from lightweight production serving:
 
 ```bash
-pip install mangosta
+# 1. Create and activate a uv environment
+uv venv
+source .venv/bin/activate
+
+# 2. Install full toolkit (Training + ONNX + Serving)
+uv add "mangosta[all]"
 ```
 
-Mangosta replaces heavy, server-dependent MLOps platforms with Unix-philosophy tooling: **plain files, SafeTensors serialization, atomic operations, and deterministic reproducibility.**
+*(Need only training or only a ~70MB zero-PyTorch production container? See [Installation & Flags](installation.md)).*
+
+---
+
+## What Can You Do with Mangosta? (The 80/20)
+
+In most ML projects, moving from a research script to production is painful: `.pt` files rely on insecure `pickle`, interrupted runs lose their random state, experiment trackers require heavy servers, and production Docker containers weigh `2.5GB+` because they carry PyTorch.
+
+Mangosta solves the **entire lifecycle** with 4 simple primitives:
 
 ```mermaid
 flowchart LR
-    A["1. Define & Train\n@register_model"] --> B["2. Save Atomic Bundle\nsave_bundle (.bundle)"]
-    B --> C["3. Inspect & View\n< 5ms CLI & mangosta view"]
-    B --> D["4. Serve & Export\nFastAPI & ONNX Runtime"]
+    A["1. Train & Track\n@register_model + RunTracker"] --> B["2. Checkpoint & Resume\nsave_bundle + resume_training"]
+    B --> C["3. Export & Inspect\nexport_onnx_as_bundle + inspect --json"]
+    C --> D["4. Zero-Torch Serving\nload_onnx_bundle (Pure NumPy)"]
 
     classDef default fill:#1e293b,stroke:#3b82f6,stroke-width:1px,color:#f8fafc;
     classDef highlight fill:#0f172a,stroke:#10b981,stroke-width:2px,color:#f8fafc;
-    class B highlight;
+    class B,D highlight;
 ```
 
 ---
 
-## 30-Second Workflow
+## 60-Second End-to-End Example
 
-### 1. Train and Save an Atomic Bundle
-
-Decorate your model, track loss, and save an atomic `.bundle` archive with weights serialized strictly in SafeTensors:
+### Phase 1: Train & Save in PyTorch (`mangosta[train]`)
 
 ```python
 import torch
 import torch.nn as nn
-from mangosta import register_model, save_bundle, RunTracker
+from mangosta import ModelRegistry, RunTracker, register_model, save_bundle
+from mangosta.export import export_onnx_as_bundle
 
-@register_model(family="mlp", version="1.0.0")
-class MLP(nn.Module):
-    def __init__(self, in_features: int = 16, out_features: int = 2):
+# 1. Register architecture with semantic versioning
+@register_model(family="tabular_mlp", version="1.0.0")
+class TabularMLP(nn.Module):
+    def __init__(self, in_features: int = 8, num_classes: int = 2) -> None:
         super().__init__()
-        self.fc = nn.Linear(in_features, out_features)
+        self.net = nn.Sequential(nn.Linear(in_features, 32), nn.ReLU(), nn.Linear(32, num_classes))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.fc(x)
+        return self.net(x)
 
-# Track experiment and save self-contained bundle
-with RunTracker(experiment="demo", run_name="run_01") as tracker:
-    model = MLP()
-    x = torch.randn(8, 16)
-    tracker.log_metrics({"loss": 0.42}, step=1)
-    save_bundle("models/mlp.bundle", model=model, sample_input=x)
+# 2. Build model & track metrics locally (zero daemons)
+model = ModelRegistry.build("tabular_mlp", version="1.0.0", in_features=8, num_classes=2)
+sample_x = torch.randn(1, 8)
+
+with RunTracker(experiment="quickstart", run_name="run_01") as tracker:
+    tracker.log_params({"lr": 1e-3, "arch": "tabular_mlp"})
+    tracker.log_metrics({"train/loss": 0.31}, step=1)
+
+# 3. Save SafeTensors bundle & export ONNX production bundle
+save_bundle("model.bundle", model=model, sample_input=sample_x)
+export_onnx_as_bundle("model.bundle", "model.onnx.bundle", sample_input=sample_x)
 ```
 
-### 2. Inspect Instantly (< 5ms)
+### Phase 2: Serve in Production Without PyTorch (`mangosta[serving]`)
 
-Inspect the bundle without importing PyTorch or allocating memory:
+In your production container, you **do not need PyTorch installed**. `load_onnx_bundle` validates input shapes and dtypes automatically before running inference with pure NumPy:
+
+```python
+import numpy as np
+from mangosta.serving import load_onnx_bundle
+
+runner = load_onnx_bundle("model.onnx.bundle")
+
+# Validates contract ([None, 8], float32) before running ONNX Runtime
+batch = np.random.randn(4, 8).astype(np.float32)
+predictions = runner.predict(batch)
+```
+
+### Phase 3: Inspect & Visualize from CLI
 
 ```bash
-mangosta inspect models/mlp.bundle --json
+# Inspect bundle metadata, contract schema, and layers in < 5ms (zero PyTorch import)
+uv run mangosta inspect model.bundle --json
+
+# Launch zero-daemon local dashboard (curves + validation image timelapses)
+uv run mangosta view
 ```
-
-```json
-{
-  "family": "mlp",
-  "version": "1.0.0",
-  "weights_format": "safetensors",
-  "weights_sha256": "4b6a...e3f8",
-  "total_parameters": 34
-}
-```
-
-### 3. Launch Local Dashboard
-
-Launch the zero-daemon visual analytics viewer:
-
-```bash
-mangosta view
-```
-
-Open `http://127.0.0.1:8501` to view loss curves, run comparisons, and validation timelapses.
 
 ---
 
-## Four Core Guarantees
+## Follow the Learning Path
 
-=== "Zero Pickle"
-    **Security by default.** Model weights are saved exclusively in Hugging Face SafeTensors with SHA-256 cryptographic verification in `manifest.json`. Arbitrary code execution during checkpoint loading is impossible.
+Everything in Mangosta is taught through 4 progressive steps matching the runnable scripts in [`examples/`](examples.md):
 
-=== "Crash Consistent"
-    **Zero corrupted checkpoints.** Saves write to a process-unique temporary file (`.tmp_*`) and finalize with an atomic filesystem rename (`os.replace`). Resumes model, optimizer, scheduler, AMP scaler, and 4 RNG states deterministically.
-
-=== "Zero Daemons"
-    **No background bloat.** No background databases, no Docker requirements, and no orphaned processes. Everything is a standard file on disk.
-
-=== "100% Agent-Friendly"
-    **Built for AI coding agents.** Sub-5ms CLI inspection parses binary SafeTensors headers directly with zero PyTorch allocation. Exceptions return structured error codes with actionable remediation hints.
-
----
-
-## Next Steps
-
-<div class="grid cards" markdown>
-
--   :material-book-open-page-variant:{ .lg .middle } __[Philosophy & Vision](philosophy_and_vision.md)__
-    
-    ---
-    
-    Learn why Mangosta adheres to the Unix philosophy and view the comparison matrix against MLflow and W&B.
-
--   :material-download:{ .lg .middle } __[Installation Guide](installation.md)__
-    
-    ---
-    
-    Install with `pip`, `uv`, optional extras (`[onnx]`, `[serving]`), or offline air-gapped setup.
-
--   :material-robot:{ .lg .middle } __[100% Agent-Friendly](agent_friendly.md)__
-    
-    ---
-    
-    Discover sub-5ms inspection, `.agents/mangosta.md` guidelines, and Antigravity skill integration.
-
--   :material-code-tags:{ .lg .middle } __[Canonical Examples](examples.md)__
-    
-    ---
-    
-    Explore 4 runnable tutorials with a smooth step-by-step learning progression.
-
-</div>
+| Step | Guide | What You Learn |
+| :-: | :--- | :--- |
+| **01** | **[Lifecycle: Training vs. Production](guides/01_fast_prototyping.md)** | How to separate PyTorch training (`.bundle`) from Zero-PyTorch serving (`.onnx.bundle`). |
+| **02** | **[Checkpoints & Deterministic Resume](guides/02_fault_tolerance_and_resumption.md)** | How to save crash-consistent checkpoints and resume bit-to-bit (including CPU/CUDA/NumPy RNG). |
+| **03** | **[Export, `<5ms` Inspection & Reports](guides/03_production_serving_and_contracts.md)** | How to export multi-output models to ONNX, inspect headers in `<5ms`, and generate offline HTML reports. |
+| **04** | **[Visual Tracking & `mangosta view`](guides/05_visualization_and_timelapses.md)** | How to log scalar curves and validation sample timelapses (Input vs. GT vs. Prediction). |
