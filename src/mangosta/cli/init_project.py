@@ -15,8 +15,7 @@ def init_project(project_name: str = ".", template: str = "default") -> Path:
         dest / "configs",
         dest / "entrypoints",
         dest / "src",
-        dest / ".agents",
-        dest / "skills" / "mangosta",
+        dest / ".agents" / "skills" / "mangosta",
     ]
     for d in dirs:
         d.mkdir(parents=True, exist_ok=True)
@@ -32,7 +31,7 @@ def init_project(project_name: str = ".", template: str = "default") -> Path:
     # 4. Clean entrypoints (train, infer, benchmark)
     _write_entrypoints(dest)
 
-    # 5. Metadata (pyproject.toml, .agents/mangosta.md, .gitignore, README.md)
+    # 5. Metadata (pyproject.toml, AGENTS.md, .agents/mangosta.md, .gitignore, README.md)
     _write_meta(dest)
 
     return dest
@@ -309,7 +308,7 @@ packages = ["src", "entrypoints"]
 """
     (dest / "pyproject.toml").write_text(pyproject_content, encoding="utf-8")
 
-    # .agents/mangosta.md & skills/mangosta/SKILL.md
+    # .agents/skills/mangosta/SKILL.md & .agents/mangosta.md
     # Load canonical skill from packaged data or repository source
     skill_content: str | None = None
     try:
@@ -326,7 +325,7 @@ packages = ["src", "entrypoints"]
             skill_content = repo_skill.read_text(encoding="utf-8")
 
     if skill_content is not None:
-        (dest / "skills" / "mangosta" / "SKILL.md").write_text(skill_content, encoding="utf-8")
+        (dest / ".agents" / "skills" / "mangosta" / "SKILL.md").write_text(skill_content, encoding="utf-8")
         (dest / ".agents" / "mangosta.md").write_text(skill_content, encoding="utf-8")
     else:
         # Fallback inline instructions if package resource is unavailable
@@ -363,7 +362,38 @@ Adhere to the following rules when reading, modifying, or executing code in this
 - Generate offline HTML report: `uv run mangosta report experiments/<exp>/<run> -o report.html`
 - Local web visualizer (zero daemons): `uv run mangosta view`
 """
+        (dest / ".agents" / "skills" / "mangosta" / "SKILL.md").write_text(agent_instructions, encoding="utf-8")
         (dest / ".agents" / "mangosta.md").write_text(agent_instructions, encoding="utf-8")
+
+    # AGENTS.md (Root agent guidelines: KISS + SOLID principles & pointers to .agents/)
+    agents_root = """# AGENTS.md - Development & Architectural Guidelines
+
+This project follows **KISS** (Keep It Simple, Stupid) and **SOLID** engineering principles, powered by [Mangosta](https://github.com/yeriel/mangosta) for PyTorch model lifecycle management.
+
+## 1. Core Engineering Philosophy
+
+- **KISS (Keep It Simple, Stupid)**:
+  - Avoid unnecessary abstractions, background daemons, or heavy external microservices.
+  - Prefer flat, local, atomic file operations (SafeTensors, JSONL, standard directories).
+  - Write straightforward, readable Python over premature optimization.
+  - Stick to established entrypoint patterns (`train`, `infer`, `benchmark`).
+
+- **SOLID Principles**:
+  - **Single Responsibility (SRP)**: Distinct layers for configuration (`configs/`), data & architectures (`src/`), orchestration entrypoints (`entrypoints/`), and artifact storage.
+  - **Open/Closed (OCP)**: Extend model architectures via `@register_model` without altering core pipeline mechanisms.
+  - **Liskov Substitution (LSP)**: All neural network modules inherit predictably from standard `torch.nn.Module`.
+  - **Interface Segregation (ISP)**: Separate training logic (PyTorch native) from production serving (pure NumPy + ONNX).
+  - **Dependency Inversion (DIP)**: Models are instantiated dynamically from configurations via `ModelRegistry.build()`.
+
+## 2. Agent Context & Deep Mangosta Documentation
+
+All comprehensive operational rules, canonical patterns, and exception remediations are located in:
+- **Root Mangosta Guide**: [`.agents/mangosta.md`](.agents/mangosta.md)
+- **Official Antigravity / Cursor Skill**: [`.agents/skills/mangosta/SKILL.md`](.agents/skills/mangosta/SKILL.md)
+
+Always refer to `.agents/skills/mangosta/SKILL.md` before generating training loops, checkpointing logic, or deployment pipelines.
+"""
+    (dest / "AGENTS.md").write_text(agents_root, encoding="utf-8")
 
     # .gitignore
     gitignore = """.venv/
