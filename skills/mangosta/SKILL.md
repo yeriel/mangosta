@@ -27,7 +27,7 @@ When reading, generating, or debugging code with `mangosta`, adhere strictly to 
 | **`mangosta.tracking`** | Atomic step metrics logging, validation timelapses & reporting. | `RunTracker`, `quick_track`, `generate_report`, `start_viewer` |
 | **`mangosta.export`** | Decoupled ONNX graph export with FP16 and unrolling. | `export_onnx`, `export_onnx_as_bundle` |
 | **`mangosta.serving`** | Slim, zero-PyTorch microservice inference engine. | `ONNXRunner`, `load_onnx_bundle` |
-| **`mangosta.cli`** | Ephemeral, machine-readable CLI commands. | `mangosta init`, `inspect --json`, `view`, `report` |
+| **`mangosta.cli`** | Ephemeral, machine-readable CLI commands. | `uv run mangosta init`, `inspect --json`, `view`, `report` |
 
 All primary entrypoints are exposed at the top-level package namespace (`from mangosta import ...`).
 
@@ -40,8 +40,8 @@ Mangosta enforces a clean separation of concerns across the model lifecycle:
 ```mermaid
 flowchart TD
     subgraph TrainingPhase["1. Training & Research Lifecycle (PyTorch Native)"]
-        A["Scaffold Clean Architecture<br/><code>mangosta init</code>"] --> B["Train & Track Runs<br/><code>RunTracker (JSONL + Images)</code>"]
-        B --> C["Mid-Training Checkpoint<br/><code>save_bundle(is_checkpoint=True)</code><br/>(Weights + Optimizer + Sched + RNG)"]
+        A["Scaffold Clean Architecture<br/><code>uv run mangosta init</code>"] --> B["Train & Track Runs<br/><code>RunTracker (JSONL + Images)</code>"]
+        B --> C["Mid-Training Checkpoint<br/><code>save_bundle()</code> with optimizer<br/>(Weights + Optimizer + Sched + RNG)"]
         C -->|Simulated Crash or Interruption| D["Deterministic Bit-to-Bit Resumption<br/><code>resume_training(restore_rng=True)</code>"]
     end
 
@@ -135,7 +135,7 @@ with RunTracker(experiment="image_classification", run_name="baseline_adamw") as
         # ... training step ...
         run.log_metrics({"train/loss": loss.item(), "train/acc": acc}, step=epoch)
 
-        # Log temporal validation predictions for the live scrubber in mangosta view
+        # Log temporal validation predictions for the live scrubber in uv run mangosta view
         run.log_validation_sample(
             sample_id="patient_scan_01",
             prediction=pred_mask_np,
@@ -235,5 +235,5 @@ uv run mangosta view
 | `ModelNotFoundError` | Requested architecture not found in `ModelRegistry`. | Ensure the module containing `@register_model` is imported. |
 | `SchemaValidationError` | Input tensor or NumPy array violates schema contract. | Verify array dimensions against `bundle.schema.inputs`. |
 | `ResumeStateError` | Attempted to resume from a bundle lacking `train_state.pt`. | Verify bundle was saved with `optimizer=` to capture training state. |
-| `TamperedBundleError` | Bundle weights or ONNX graph SHA-256 hash mismatch. | Archive integrity compromised; re-export or restore from verified source. |
-| `TorchNotInstalledError` | Attempted to use PyTorch-only function in slim environment. | Use `mangosta.serving` primitives or install PyTorch (`pip install torch`). |
+| `BundleCorruptedError` | Missing archive files or SHA-256 hash mismatch. | Archive integrity compromised; re-export or restore from verified source. |
+| `ImportError` | Attempted to use PyTorch-only function in slim environment. | Use `mangosta.serving` primitives or install PyTorch (`pip install torch` / `uv add 'mangosta[train]'`). |

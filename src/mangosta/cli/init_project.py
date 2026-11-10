@@ -16,6 +16,7 @@ def init_project(project_name: str = ".", template: str = "default") -> Path:
         dest / "entrypoints",
         dest / "src",
         dest / ".agents",
+        dest / "skills" / "mangosta",
     ]
     for d in dirs:
         d.mkdir(parents=True, exist_ok=True)
@@ -308,8 +309,28 @@ packages = ["src", "entrypoints"]
 """
     (dest / "pyproject.toml").write_text(pyproject_content, encoding="utf-8")
 
-    # .agents/mangosta.md
-    agent_instructions = """# Agent Instructions: Mangosta Project Conventions
+    # .agents/mangosta.md & skills/mangosta/SKILL.md
+    # Load canonical skill from packaged data or repository source
+    skill_content: str | None = None
+    try:
+        import importlib.resources as pkg_resources
+
+        skill_file = pkg_resources.files("mangosta") / "skills" / "mangosta" / "SKILL.md"
+        skill_content = skill_file.read_text(encoding="utf-8")
+    except Exception:
+        pass
+
+    if skill_content is None:
+        repo_skill = Path(__file__).resolve().parent.parent.parent.parent / "skills" / "mangosta" / "SKILL.md"
+        if repo_skill.is_file():
+            skill_content = repo_skill.read_text(encoding="utf-8")
+
+    if skill_content is not None:
+        (dest / "skills" / "mangosta" / "SKILL.md").write_text(skill_content, encoding="utf-8")
+        (dest / ".agents" / "mangosta.md").write_text(skill_content, encoding="utf-8")
+    else:
+        # Fallback inline instructions if package resource is unavailable
+        agent_instructions = """# Agent Instructions: Mangosta Project Conventions
 
 This project uses **Mangosta** for PyTorch model lifecycle management, experiment tracking, and artifact packaging.
 Adhere to the following rules when reading, modifying, or executing code in this repository:
@@ -338,11 +359,11 @@ Adhere to the following rules when reading, modifying, or executing code in this
 - Train model: `uv run train` or `uv run python -m entrypoints.train`
 - Run inference: `uv run infer`
 - Benchmark latency: `uv run benchmark`
-- Inspect bundle metadata (<5ms SafeTensors header parsing): `mangosta inspect checkpoints/model_final.bundle --json`
-- Generate offline HTML report: `mangosta report experiments/<exp>/<run> -o report.html`
-- Local web visualizer (zero daemons): `mangosta view`
+- Inspect bundle metadata (<5ms SafeTensors header parsing): `uv run mangosta inspect checkpoints/model_final.bundle --json`
+- Generate offline HTML report: `uv run mangosta report experiments/<exp>/<run> -o report.html`
+- Local web visualizer (zero daemons): `uv run mangosta view`
 """
-    (dest / ".agents" / "mangosta.md").write_text(agent_instructions, encoding="utf-8")
+        (dest / ".agents" / "mangosta.md").write_text(agent_instructions, encoding="utf-8")
 
     # .gitignore
     gitignore = """.venv/
@@ -375,7 +396,7 @@ uv run infer --bundle checkpoints/model_final.bundle
 uv run benchmark --bundle checkpoints/model_final.bundle
 
 # Inspect bundle metadata
-mangosta inspect checkpoints/model_final.bundle
+uv run mangosta inspect checkpoints/model_final.bundle
 ```
 
 ### 2. Traditional Python
