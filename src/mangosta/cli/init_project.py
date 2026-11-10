@@ -31,7 +31,7 @@ def init_project(project_name: str = ".", template: str = "default") -> Path:
     # 4. Clean entrypoints (train, infer, benchmark)
     _write_entrypoints(dest)
 
-    # 5. Metadata (pyproject.toml, AGENTS.md, .agents/mangosta.md, .gitignore, README.md)
+    # 5. Metadata (pyproject.toml, AGENTS.md, .gitignore, README.md)
     _write_meta(dest)
 
     return dest
@@ -308,7 +308,7 @@ packages = ["src", "entrypoints"]
 """
     (dest / "pyproject.toml").write_text(pyproject_content, encoding="utf-8")
 
-    # .agents/skills/mangosta/SKILL.md & .agents/mangosta.md
+    # .agents/skills/mangosta/SKILL.md
     # Load canonical skill from packaged data or repository source
     skill_content: str | None = None
     try:
@@ -326,7 +326,6 @@ packages = ["src", "entrypoints"]
 
     if skill_content is not None:
         (dest / ".agents" / "skills" / "mangosta" / "SKILL.md").write_text(skill_content, encoding="utf-8")
-        (dest / ".agents" / "mangosta.md").write_text(skill_content, encoding="utf-8")
     else:
         # Fallback inline instructions if package resource is unavailable
         agent_instructions = """# Agent Instructions: Mangosta Project Conventions
@@ -363,7 +362,6 @@ Adhere to the following rules when reading, modifying, or executing code in this
 - Local web visualizer (zero daemons): `uv run mangosta view`
 """
         (dest / ".agents" / "skills" / "mangosta" / "SKILL.md").write_text(agent_instructions, encoding="utf-8")
-        (dest / ".agents" / "mangosta.md").write_text(agent_instructions, encoding="utf-8")
 
     # AGENTS.md (Root agent guidelines: KISS + SOLID principles & pointers to .agents/)
     agents_root = """# AGENTS.md - Development & Architectural Guidelines
@@ -388,7 +386,6 @@ This project follows **KISS** (Keep It Simple, Stupid) and **SOLID** engineering
 ## 2. Agent Context & Deep Mangosta Documentation
 
 All comprehensive operational rules, canonical patterns, and exception remediations are located in:
-- **Root Mangosta Guide**: [`.agents/mangosta.md`](.agents/mangosta.md)
 - **Official Antigravity / Cursor Skill**: [`.agents/skills/mangosta/SKILL.md`](.agents/skills/mangosta/SKILL.md)
 
 Always refer to `.agents/skills/mangosta/SKILL.md` before generating training loops, checkpointing logic, or deployment pipelines.
