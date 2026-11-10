@@ -71,7 +71,7 @@ if HAS_TORCH:
         start_viewer,
     )
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 _BASE_ALL = [
     "__version__",
