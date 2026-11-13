@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 
 def init_project(project_name: str = ".", template: str = "default") -> Path:
@@ -249,8 +250,90 @@ if __name__ == "__main__":
     (dest / "entrypoints" / "benchmark.py").write_text(benchmark_code, encoding="utf-8")
 
 
+_TOML_HEADER_RE = re.compile(r"^\s*\[([A-Za-z0-9_.-]+)\]\s*(?:#.*)?$")
+
+
+def _find_toml_section(lines: list[str], header: str) -> tuple[int, int] | None:
+    """Return (header_idx, end_idx) for an exact TOML table header, or None."""
+    for idx, line in enumerate(lines):
+        match = _TOML_HEADER_RE.match(line)
+        if match and match.group(1) == header:
+            end_idx = len(lines)
+            for next_idx in range(idx + 1, len(lines)):
+                if _TOML_HEADER_RE.match(lines[next_idx]):
+                    end_idx = next_idx
+                    break
+            return idx, end_idx
+    return None
+
+
+def _upsert_toml_section(
+    text: str,
+    header: str,
+    entries: list[tuple[str, str]],
+    replace_if_contains: str | None = None,
+) -> str:
+    """Ensure a TOML table exists and contains the given key/value lines."""
+    lines = text.splitlines()
+    section = _find_toml_section(lines, header)
+    entry_lines = [f"{key} = {value}" for key, value in entries]
+
+    if section is None:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.append(f"[{header}]")
+        lines.extend(entry_lines)
+        return "\n".join(lines) + "\n"
+
+    header_idx, end_idx = section
+    body_text = "\n".join(lines[header_idx + 1 : end_idx])
+
+    if replace_if_contains is not None and replace_if_contains in body_text:
+        replacement = list(entry_lines)
+        if end_idx < len(lines):
+            replacement.append("")
+        lines[header_idx + 1 : end_idx] = replacement
+        return "\n".join(lines).rstrip() + "\n"
+
+    insert_idx = end_idx
+    while insert_idx > header_idx + 1 and not lines[insert_idx - 1].strip():
+        insert_idx -= 1
+
+    missing: list[str] = []
+    for key, value in entries:
+        key_re = re.compile(rf"^\s*{re.escape(key)}\s*=")
+        if not any(key_re.match(line) for line in lines[header_idx + 1 : end_idx]):
+            missing.append(f"{key} = {value}")
+
+    if missing:
+        lines[insert_idx:insert_idx] = missing
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _upgrade_mangosta_dep(text: str) -> str:
+    """Upgrade bare 'mangosta' dependency inside dependencies = [...] to 'mangosta[full]'."""
+
+    def _replace_in_deps(match: re.Match[str]) -> str:
+        block = match.group(0)
+        if "mangosta[" in block:
+            return block
+        return re.sub(
+            r'(["\'])mangosta((?:[><=!~][^"\']*)?)\1',
+            r"\1mangosta[full]\2\1",
+            block,
+        )
+
+    return re.sub(
+        r"(?ms)^\s*dependencies\s*=\s*\[.*?\]",
+        _replace_in_deps,
+        text,
+        count=1,
+    )
+
+
 def _ensure_pyproject(dest: Path, project_slug: str) -> None:
-    """Create pyproject.toml if missing, or safely preserve [tool.uv.sources] and ensure full runtime."""
+    """Create pyproject.toml if missing, or safely upgrade uv-initialized projects."""
     pyproject_path = dest / "pyproject.toml"
     if not pyproject_path.exists():
         pyproject_content = f"""[project]
@@ -274,36 +357,47 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src", "entrypoints"]
+
+[tool.uv]
+package = true
 """
         pyproject_path.write_text(pyproject_content, encoding="utf-8")
         return
 
-    # Preserve existing pyproject.toml (especially [tool.uv.sources] and dependencies!)
+    # Preserve existing pyproject.toml (especially [tool.uv.sources] and dependencies)
     existing = pyproject_path.read_text(encoding="utf-8")
-    updated = existing
+    updated = _upgrade_mangosta_dep(existing)
+    updated = _upsert_toml_section(
+        updated,
+        "project.scripts",
+        [
+            ("train", '"entrypoints.train:main"'),
+            ("infer", '"entrypoints.infer:main"'),
+            ("benchmark", '"entrypoints.benchmark:main"'),
+        ],
+    )
+    updated = _upsert_toml_section(
+        updated,
+        "build-system",
+        [
+            ("requires", '["hatchling"]'),
+            ("build-backend", '"hatchling.build"'),
+        ],
+        replace_if_contains="uv_build",
+    )
+    updated = _upsert_toml_section(
+        updated,
+        "tool.hatch.build.targets.wheel",
+        [("packages", '["src", "entrypoints"]')],
+    )
+    updated = _upsert_toml_section(
+        updated,
+        "tool.uv",
+        [("package", "true")],
+    )
 
-    # Upgrade bare "mangosta" dependency to "mangosta[full]" if no extra was selected
-    if '"mangosta"' in updated and '"mangosta[' not in updated:
-        updated = updated.replace('"mangosta"', '"mangosta[full]"', 1)
-
-    additions: list[str] = []
-    if "[project.scripts]" not in updated:
-        additions.append(
-            '\n[project.scripts]\ntrain = "entrypoints.train:main"\n'
-            'infer = "entrypoints.infer:main"\nbenchmark = "entrypoints.benchmark:main"\n'
-        )
-    if "[build-system]" not in updated:
-        additions.append(
-            '\n[build-system]\nrequires = ["hatchling"]\nbuild-backend = "hatchling.build"\n'
-        )
-    if "[tool.hatch.build.targets.wheel]" not in updated:
-        additions.append('\n[tool.hatch.build.targets.wheel]\npackages = ["src", "entrypoints"]\n')
-    if "package = true" not in updated:
-        additions.append("\n[tool.uv]\npackage = true\n")
-
-    if additions or updated != existing:
-        final_text = updated.rstrip() + "\n" + "".join(additions) if additions else updated
-        pyproject_path.write_text(final_text, encoding="utf-8")
+    if updated != existing:
+        pyproject_path.write_text(updated, encoding="utf-8")
 
 
 def _write_meta(dest: Path) -> None:
