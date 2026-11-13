@@ -307,7 +307,7 @@ def export_onnx(
             except ImportError:
                 warnings.warn(
                     "onnx package is not installed; skipping onnx.checker validation. "
-                    "Install with `pip install onnx` or `pip install mangosta[onnx]`.",
+                    "Install with `pip install onnx` or `pip install 'mangosta[full]'`.",
                     stacklevel=2,
                 )
             except Exception as e:

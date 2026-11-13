@@ -1,113 +1,129 @@
 # Mangosta
 
-> **Lightweight MLOps and Model Lifecycle Management for PyTorch.**  
-> Train with PyTorch. Track without daemons. Serve in ~70MB containers without PyTorch.
+**Lightweight MLOps and Model Lifecycle Management for PyTorch.**
+
+Train with PyTorch. Track without daemons. Serve in `~70MB` containers without PyTorch.
 
 ---
 
-## Quick Install (with `uv`)
+## Key Features
 
-Mangosta is designed to be used inside a **`uv`** virtual environment. It separates heavy training dependencies from lightweight production serving:
-
-```bash
-# 1. Create and activate a uv environment
-uv venv
-source .venv/bin/activate
-
-# 2. Install full toolkit (Training + ONNX + Serving)
-uv add "mangosta[all]"
-```
-
-*(Need only training or only a ~70MB zero-PyTorch production container? See [Installation & Flags](installation.md)).*
+- **Zero Daemons, Zero Servers**: All runs, metrics, and models live as atomic local files (`JSONL`, `run.json`, `.bundle` ZIPs) instead of background databases.
+- **Zero-Pickle Weights**: Model weights serialize exclusively with Hugging Face **SafeTensors** and a verified SHA-256 checksum.
+- **White-Box Training (`BaseTrainer`)**: Handles device resolution, AMP, gradient clipping, LR schedulers, `EarlyStopping`, tracking, and checkpointing without hiding your PyTorch code.
+- **Deterministic Resume**: Checkpoints snapshot optimizer, scheduler, `GradScaler`, and 4 RNG states (PyTorch CPU, CUDA, NumPy, Python) for exact bit-to-bit recovery.
+- **Shape & Dtype Contracts (`ModelSchema`)**: Invalid inputs fail immediately with `SchemaValidationError` before reaching your model.
+- **Slim Production Serving**: Export `.bundle` archives to `.onnx.bundle` and run inference with pure NumPy (`mangosta[serving]`, no PyTorch installed).
 
 ---
 
-## What Can You Do with Mangosta?
+## Installation
 
-In most ML projects, moving from a research script to production is painful: `.pt` files rely on insecure `pickle`, interrupted runs lose their random state, experiment trackers require heavy servers, and production Docker containers weigh `2.5GB+` because they carry PyTorch.
+Mangosta separates heavy training tools from slim production serving:
 
-Mangosta solves the **entire lifecycle** with 4 simple primitives:
+=== "Training & Full Dev (`[full]`)"
 
-```mermaid
-flowchart LR
-    A["1. Train & Track\n@register_model + RunTracker"] --> B["2. Checkpoint & Resume\nsave_bundle + resume_training"]
-    B --> C["3. Export & Inspect\nexport_onnx_as_bundle + inspect --json"]
-    C --> D["4. Zero-Torch Serving\nload_onnx_bundle (Pure NumPy)"]
+    ```bash
+    uv add "mangosta[full]"
+    ```
 
-    classDef default fill:#1e293b,stroke:#3b82f6,stroke-width:1px,color:#f8fafc;
-    classDef highlight fill:#0f172a,stroke:#10b981,stroke-width:2px,color:#f8fafc;
-    class B,D highlight;
-```
+    Includes PyTorch, SafeTensors, ONNX, and ONNX Runtime.
+
+=== "Zero-PyTorch Serving (`[serving]`)"
+
+    ```bash
+    uv add "mangosta[serving]"
+    ```
+
+    Includes NumPy, ONNX Runtime, PyYAML, and `packaging` — **no PyTorch (`~70MB` container)**.
+
+=== "Minimal Core (no extras)"
+
+    ```bash
+    uv add mangosta
+    ```
+
+    Schema contracts, strict config validation, and `<5ms` `.bundle` inspection (`mangosta inspect --json`).
 
 ---
 
-## 60-Second End-to-End Example
+## A 60-Second Example
 
-### Phase 1: Train & Save in PyTorch (`mangosta[train]`)
+### 1. Train & Package in PyTorch (`mangosta[full]`)
+
+Define your model, subclass `BaseTrainer`, and call `.fit()`:
 
 ```python
 import torch
 import torch.nn as nn
-from mangosta import ModelRegistry, RunTracker, register_model, save_bundle
-from mangosta.export import export_onnx_as_bundle
+from torch.utils.data import DataLoader, TensorDataset
+from mangosta import BaseTrainer, load_config, register_model, register_trainer
 
-# 1. Register architecture with semantic versioning
-@register_model(family="tabular_mlp", version="1.0.0")
-class TabularMLP(nn.Module):
-    def __init__(self, in_features: int = 8, num_classes: int = 2) -> None:
+@register_model(family="mlp", version="1.0.0")  # (1)!
+class MLP(nn.Module):
+    def __init__(self, in_features: int = 8, num_classes: int = 3) -> None:
         super().__init__()
         self.net = nn.Sequential(nn.Linear(in_features, 32), nn.ReLU(), nn.Linear(32, num_classes))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)
 
-# 2. Build model & track metrics locally (zero daemons)
-model = ModelRegistry.build("tabular_mlp", version="1.0.0", in_features=8, num_classes=2)
-sample_x = torch.randn(1, 8)
+@register_trainer(family="mlp", version="1.0.0")
+class MLPTrainer(BaseTrainer):  # (2)!
+    def __init__(self, model: nn.Module, config=None, **kwargs) -> None:
+        super().__init__(model, config, criterion=nn.CrossEntropyLoss(), **kwargs)
 
-with RunTracker(experiment="quickstart", run_name="run_01") as tracker:
-    tracker.log_params({"lr": 1e-3, "arch": "tabular_mlp"})
-    tracker.log_metrics({"train/loss": 0.31}, step=1)
+cfg = load_config({
+    "experiment": {"name": "quickstart", "seed": 42},
+    "model": {"family": "mlp", "version": "1.0.0"},
+    "training": {"epochs": 3, "learning_rate": 1e-3},
+})
+x, y = torch.randn(64, 8), torch.randint(0, 3, (64,))
+loader = DataLoader(TensorDataset(x, y), batch_size=16, shuffle=True)
 
-# 3. Save SafeTensors bundle & export ONNX production bundle
-save_bundle("model.bundle", model=model, sample_input=sample_x)
-export_onnx_as_bundle("model.bundle", "model.onnx.bundle", sample_input=sample_x)
+trainer = MLPTrainer(MLP(), config=cfg)
+result = trainer.fit(train_loader=loader, val_loader=loader)  # (3)!
 ```
 
-### Phase 2: Serve in Production Without PyTorch (`mangosta[serving]`)
+1. Registers `MLP` with SemVer so checkpoints can reconstruct the exact architecture later without `pickle`.
+2. Passing `criterion=` to `BaseTrainer` gives you `training_step` and `validation_step` out of the box—or override them directly for custom losses/metrics.
+3. Automatically logs `metrics.jsonl`, captures git/dataset provenance, and writes `model_checkpoint.bundle`, `model_best.bundle`, and `model_final.bundle`.
 
-In your production container, you **do not need PyTorch installed**. `load_onnx_bundle` validates input shapes and dtypes automatically before running inference with pure NumPy:
+### 2. Inspect, View & Export from the CLI
+
+```bash
+# Inspect any .bundle in <5ms without importing PyTorch
+uv run mangosta inspect checkpoints/model_final.bundle --json
+
+# Open the interactive dashboard (metrics, model comparison, validation timelapses & bundle diff)
+uv run mangosta view
+
+# Export to a zero-PyTorch ONNX bundle (shape auto-inferred from ModelSchema)
+uv run mangosta export-onnx checkpoints/model_final.bundle -o deploy/model.onnx.bundle -m my_models
+```
+
+### 3. Serve in Production Without PyTorch (`mangosta[serving]`)
 
 ```python
 import numpy as np
-from mangosta.serving import load_onnx_bundle
+from mangosta import load_onnx_bundle
 
-runner = load_onnx_bundle("model.onnx.bundle")
-
-# Validates contract ([None, 8], float32) before running ONNX Runtime
-batch = np.random.randn(4, 8).astype(np.float32)
-predictions = runner.predict(batch)
+runner = load_onnx_bundle("deploy/model.onnx.bundle")
+preds = runner.predict(np.random.randn(4, 8).astype(np.float32))
 ```
 
-### Phase 3: Inspect & Visualize from CLI
-
-```bash
-# Inspect bundle metadata, contract schema, and layers in < 5ms (zero PyTorch import)
-uv run mangosta inspect model.bundle --json
-
-# Launch zero-daemon local dashboard (curves + validation image timelapses)
-uv run mangosta view
-```
+!!! tip "Automatic Contract Validation"
+    If a client sends shape `(4, 5)` instead of `(4, 8)`, `runner.predict(...)` rejects it immediately with `SchemaValidationError` before invoking ONNX Runtime.
 
 ---
 
-## Follow the Learning Path
+## Where to Go Next
 
-Everything in Mangosta is taught through 4 progressive steps matching the runnable scripts in [`examples/`](examples.md):
+Start with the step-by-step **Tutorial - User Guide** to build your first project from scratch:
 
-| Step | Guide | What You Learn |
-| :-: | :--- | :--- |
-| **01** | **[Lifecycle: Training vs. Production](guides/01_fast_prototyping.md)** | How to separate PyTorch training (`.bundle`) from Zero-PyTorch serving (`.onnx.bundle`). |
-| **02** | **[Checkpoints & Deterministic Resume](guides/02_fault_tolerance_and_resumption.md)** | How to save crash-consistent checkpoints and resume bit-to-bit (including CPU/CUDA/NumPy RNG). |
-| **03** | **[Export, `<5ms` Inspection & Reports](guides/03_production_serving_and_contracts.md)** | How to export multi-output models to ONNX, inspect headers in `<5ms`, and generate offline HTML reports. |
-| **04** | **[Visual Tracking & `mangosta view`](guides/05_visualization_and_timelapses.md)** | How to log scalar curves and validation sample timelapses (Input vs. GT vs. Prediction). |
+1. **[First Project (`mangosta init`)](tutorial/01_first_project.md)** — Scaffold a Clean Architecture repo with `AGENTS.md` and AI skill support.
+2. **[Config & Registries](tutorial/02_config_and_registries.md)** — Strict YAML configs with typo hints and SemVer model/trainer catalogs.
+3. **[Training with `BaseTrainer`](tutorial/03_training_with_basetrainer.md)** — White-box hooks, AMP, schedulers, and `EarlyStopping`.
+4. **[Checkpoints & RNG Resume](tutorial/04_checkpoints_and_resume.md)** — Crash-safe atomic saves and bit-to-bit deterministic resumption.
+5. **[Tracking & `mangosta view`](tutorial/05_visual_tracking_and_view.md)** — Compare runs/models, scrub validation timelapses, and inspect SafeTensors layers.
+6. **[ONNX Export & Serving](tutorial/06_onnx_export_and_serving.md)** — Deploy slim zero-PyTorch microservices with shape contracts.

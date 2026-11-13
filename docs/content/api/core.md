@@ -1,80 +1,126 @@
 # API Reference: Core (`mangosta.core`)
 
-The `mangosta.core` module defines the foundational primitives for architecture registration, deterministic version resolution, and architectural decoupling.
+`mangosta.core` contains typed configuration (`MangostaConfig`), deterministic seeding, SemVer registries (`ModelRegistry`, `TrainerRegistry`), and I/O tensor contracts (`ModelSchema`).
 
 ---
 
-## `@register_model`
+## 1. Configuration & Seeding
+
+### `load_config`
+
+```python
+def load_config(path_or_dict: str | Path | dict[str, Any] | MangostaConfig) -> MangostaConfig
+```
+
+Loads a YAML file or dict into a validated `MangostaConfig`. Unknown keys under root, `experiment`, or `training` raise `ConfigError` with `"Did you mean '...'?"` suggestions.
+
+### `MangostaConfig`
+
+| Section | Class / Type | Fields & Defaults |
+| :--- | :--- | :--- |
+| `experiment` | `ExperimentConfig` | `name: str = "baseline"`, `seed: int = 42`, `device: str = "auto"` (`"auto"`, `"cpu"`, `"cuda"`, `"mps"`) |
+| `model` | `ModelConfig` | `family: str = ""`, `version: str = "1.0.0"`, `init_args: dict[str, Any] = {}` |
+| `training` | `TrainingConfig` | `epochs: int = 10`, `batch_size: int = 16`, `learning_rate: float = 1e-3`, `weight_decay: float = 0.0`, `amp: bool = False`, `grad_clip_norm: float \| None = None`, `patience: int \| None = None`, `monitor: str = "val_loss"`, `monitor_mode: str = "min"` |
+| `data` | `dict[str, Any]` | Free-form dataset configuration |
+| `custom` | `dict[str, Any]` | Free-form user metadata |
+
+Methods: `to_dict() -> dict[str, Any]`, `format_summary(resolved_device: str | None = None) -> str`.
+
+### `seed_everything`
+
+```python
+def seed_everything(seed: int = 42) -> None
+```
+
+Fixes seeds across Python `random`, `PYTHONHASHSEED`, NumPy, PyTorch CPU, and all CUDA GPUs (when PyTorch is installed).
+
+---
+
+## 2. Registries
+
+### `@register_model` & `ModelRegistry`
 
 ```python
 def register_model(
     family: str,
     version: str,
     allow_override: bool = False,
-) -> Callable[[type[nn.Module]], type[nn.Module]]:
+) -> Callable[[type[nn.Module]], type[nn.Module]]
 ```
 
-Decorator to register a PyTorch `nn.Module` class under a model family and semantic version.
+| Method | Signature | Behavior |
+| :--- | :--- | :--- |
+| `get_model_cls` | `(family: str, version: str \| None = None) -> tuple[type, str]` | Returns `(cls, resolved_version)`. Picks highest SemVer if `version=None`. |
+| `build` | `(family: str, version: str \| None = None, **init_args: Any) -> nn.Module` | Instantiates model by coordinates. |
+| `build_from_config` | `(config: MangostaConfig \| dict \| str \| Path) -> nn.Module` | Instantiates using `cfg.model.family`, `version`, and `init_args`. |
+| `list_models` | `() -> list[dict[str, str]]` | Lists registered families, versions, class names, and modules. |
 
-### Parameters
-- **`family`**: Architectural family identifier (e.g. `"classifier"`, `"vit"`, `"unet"`).
-- **`version`**: Semantic version string (e.g. `"1.0.0"`, `"2.1.0"`).
-- **`allow_override`**: If `False` (default), attempting to register the exact same `(family, version)` raises `RegistryCollisionError` with actionable remediation hints.
+### `@register_trainer` & `TrainerRegistry`
 
-### Example
 ```python
-from mangosta import register_model
-import torch.nn as nn
-
-@register_model(family="mlp", version="1.0.0")
-class SimpleMLP(nn.Module):
-    def __init__(self, in_features: int = 10, out_features: int = 2) -> None:
-        super().__init__()
-        self.fc = nn.Linear(in_features, out_features)
-
-    def forward(self, x):
-        return self.fc(x)
+def register_trainer(
+    family: str,
+    version: str = "1.0.0",
+    allow_override: bool = False,
+) -> Callable[[C], C]
 ```
+
+| Method | Signature | Behavior |
+| :--- | :--- | :--- |
+| `get_trainer_cls` | `(family: str, version: str \| None = None) -> tuple[type, str]` | Resolves exact or highest SemVer trainer subclass. |
+| `build` | `(family: str, version: str \| None = None, **kwargs: Any) -> BaseTrainer` | Instantiates trainer directly. |
+| `build_from_config` | `(config: Any, model: Any, **kwargs: Any) -> BaseTrainer` | Instantiates using `cfg.model.family` and `cfg.model.version`, passing `model=model, config=cfg`. |
+| `list_trainers` | `() -> list[dict[str, str]]` | Lists registered trainer classes. |
+
+### `register_component` & `get_component`
+
+```python
+def register_component(kind: str, name: str, allow_override: bool = False) -> Callable[[C], C]
+```
+
+Decorator and lookup (`ModelRegistry.get_component(kind, name)`) for auxiliary factories (losses, optimizers, schedulers).
 
 ---
 
-## `ModelRegistry`
+## 3. Schema Contracts (`mangosta.core.schema`)
 
-Thread-safe registry managing registered model classes and auxiliary lifecycle components.
-
-### Methods
-
-#### `register_model(family: str, version: str, model_cls: type, allow_override: bool = False) -> None`
-Register an architecture programmatically without decorators.
-
-#### `get_model_cls(family: str, version: str | None = None) -> tuple[type, str]`
-Retrieve a registered architecture class:
-- If `version` is specified (e.g. `"1.0.0"`), retrieves that exact version.
-- If `version` is `None` or omitted, resolves to the latest semantic version available.
-- Returns `(model_class, resolved_version)`.
-- Raises `ModelNotFoundError` if family is unknown or version is missing.
-
-#### `build(family: str, version: str | None = None, **init_args: Any) -> nn.Module`
-Instantiate a registered architecture by family name, forwarding `init_args` to its constructor.
-
-#### `list_families() -> list[str]`
-List all currently registered model family names.
-
-#### `list_versions(family: str) -> list[str]`
-List all semantic versions available for a given family, sorted in ascending semver order.
-
----
-
-## `register_component` & `get_component`
+### `TensorSpec`
 
 ```python
-def register_component(kind: str, name: str, component: Any, allow_override: bool = False) -> None
-def get_component(kind: str, name: str) -> Any
+@dataclass
+class TensorSpec:
+    shape: list[int | None]   # None or -1 represents a dynamic dimension
+    dtype: str                # Canonical dtype e.g. "float32", "int64"
+    name: str = "tensor"
 ```
 
-Register and retrieve auxiliary training components (e.g., loss functions, optimizers, learning rate schedulers, or data augmentations).
+Method: `matches(tensor: Any, allow_batch_dynamic: bool = True) -> tuple[bool, str | None]`.
 
-### Parameters
-- **`kind`**: Type of component (e.g., `"loss"`, `"optimizer"`, `"scheduler"`).
-- **`name`**: Identifier name (e.g., `"focal_loss"`, `"cosine_warmup"`).
-- **`component`**: Callable class or factory function.
+### `ModelSchema`
+
+```python
+@dataclass
+class ModelSchema:
+    inputs: list[TensorSpec] | dict[str, TensorSpec]
+    outputs: list[TensorSpec] | dict[str, TensorSpec]
+    input_structure: str = "tensor"   # "tensor", "sequence", or "mapping"
+    output_structure: str = "tensor"  # "tensor", "sequence", or "mapping"
+    metadata: dict[str, Any] = field(default_factory=dict)
+```
+
+| Method | Behavior |
+| :--- | :--- |
+| `validate_input(data)` / `validate_output(data)` | Raises `SchemaValidationError` on mismatch. |
+| `check_input(data)` / `check_output(data)` | Returns `(is_valid: bool, error_message: str \| None)`. |
+| `is_valid_input(data)` / `is_valid_output(data)` | Returns `bool`. |
+| `to_dict()` / `from_dict(data)` | JSON-serializable round-trip. |
+
+### `infer_schema` & `infer_schema_from_sample`
+
+```python
+def infer_schema(model: nn.Module, sample_input: Any, dynamic_batch_dim: int | None = 0) -> ModelSchema
+def infer_schema_from_sample(sample_input: Any, sample_output: Any, dynamic_batch_dim: int | None = 0) -> ModelSchema
+```
+
+- `infer_schema` runs one `torch.inference_mode()` pass while preserving `model.training`.
+- `infer_schema_from_sample` works without PyTorch using NumPy arrays or Tensor-like objects.

@@ -87,7 +87,7 @@ uv run mangosta init my_project
 cd my_project
 ```
 
-Scaffolds a modular project with `configs/`, `src/`, `entrypoints/`, and `.agents/mangosta.md`.
+Scaffolds a modular project with `configs/`, `src/`, `entrypoints/`, `AGENTS.md`, and `.agents/skills/mangosta/`.
 
 ### 2. Register Architecture & Track Training
 

@@ -13,23 +13,24 @@ edit_uri = "edit/main/docs/content/"
 
 nav = [
   { "Overview" = "index.md" },
-  { "Installation & Flags" = "installation.md" },
-  { "Philosophy & Vision (80/20)" = "philosophy_and_vision.md" },
-  { "Step-by-Step Guides" = [
-      { "01. Lifecycle: Train vs. Prod" = "guides/01_fast_prototyping.md" },
-      { "02. Checkpoints & Resume" = "guides/02_fault_tolerance_and_resumption.md" },
-      { "03. Export, Inspect & Reports" = "guides/03_production_serving_and_contracts.md" },
-      { "04. Visual Tracking & View" = "guides/05_visualization_and_timelapses.md" },
+  { "Installation" = "installation.md" },
+  { "Tutorial - User Guide" = [
+      { "01. First Project (init)" = "tutorial/01_first_project.md" },
+      { "02. Config & Registries" = "tutorial/02_config_and_registries.md" },
+      { "03. Training with BaseTrainer" = "tutorial/03_training_with_basetrainer.md" },
+      { "04. Checkpoints & RNG Resume" = "tutorial/04_checkpoints_and_resume.md" },
+      { "05. Tracking & mangosta view" = "tutorial/05_visual_tracking_and_view.md" },
+      { "06. ONNX Export & Serving" = "tutorial/06_onnx_export_and_serving.md" },
   ] },
-  { "100% Agent-Friendly & CLI" = "agent_friendly.md" },
-  { "Runnable Examples" = "examples.md" },
+  { "CLI & AI Agents" = "cli_and_agents.md" },
+  { "Examples" = "examples.md" },
   { "API Reference" = [
       { "mangosta.core" = "api/core.md" },
+      { "mangosta.engine" = "api/engine.md" },
       { "mangosta.artifacts" = "api/artifacts.md" },
-      { "mangosta.tracking" = "api/tracker.md" },
-      { "mangosta.export" = "api/export.md" },
-      { "mangosta.serving" = "api/serving.md" },
-      { "mangosta.core.schema" = "api/schema.md" },
+      { "mangosta.tracking" = "api/tracking.md" },
+      { "mangosta.export & serving" = "api/export_and_serving.md" },
+      { "mangosta.exceptions" = "api/exceptions.md" },
   ] },
 ]
 
@@ -62,12 +63,16 @@ toggle.name = "Switch to light mode"
 [[project.theme.palette]]
 media = "(prefers-color-scheme: light)"
 scheme = "default"
+primary = "indigo"
+accent = "indigo"
 toggle.icon = "lucide/sun"
 toggle.name = "Switch to dark mode"
 
 [[project.theme.palette]]
 media = "(prefers-color-scheme: dark)"
 scheme = "slate"
+primary = "indigo"
+accent = "cyan"
 toggle.icon = "lucide/moon"
 toggle.name = "Switch to system preference"
 

@@ -1,6 +1,6 @@
 # API Reference: Artifacts & Bundles (`mangosta.artifacts`)
 
-The artifacts module handles atomic packaging, cryptographic verification, and resumption for PyTorch models and training checkpoints using standard ZIP archives and SafeTensors format (zero-pickle execution).
+Handles atomic `.bundle` ZIP packaging with zero-pickle SafeTensors weights, cryptographic SHA-256 verification, zero-torch metadata inspection, and bit-to-bit checkpoint recovery.
 
 ---
 
@@ -25,25 +25,14 @@ def save_bundle(
     metrics: dict[str, float] | None = None,
     config: dict[str, Any] | str | Path | None = None,
     metadata: dict[str, Any] | None = None,
-) -> Path:
+) -> Path
 ```
 
-Atomically pack a trained PyTorch model and its complete lifecycle metadata into a self-contained `.bundle` file.
+Atomically writes `.bundle` via temporary file + `os.replace`:
 
-### Smart Defaults & Guarantees
-- **Atomic Creation**: Writes to a temporary `.tmp_<pid>_<uuid>` file and performs an atomic filesystem rename (`os.replace`) upon completion.
-- **Zero-Pickle Weights**: Model weights are serialized exclusively using Hugging Face SafeTensors (`model.safetensors`).
-- **Cryptographic Fingerprint**: Computes SHA-256 hash of the weights and writes it into `manifest.json`.
-- **Automatic Schema Inference**: If `sample_input` is provided and `schema` is omitted, `infer_schema(model, sample_input)` is invoked automatically.
-- **Smart Family Fallback**: Defaults to `model.__class__.__name__.lower()` if `family` is omitted.
-- **Checkpoint Detection**: Automatically sets `is_checkpoint = True` if `optimizer`, `scheduler`, or `scaler` is supplied.
-
-### Resumption States
-When `is_checkpoint=True`, the bundle saves:
-- Optimizer state dict (`optimizer.state_dict()`)
-- Learning rate scheduler state dict (`scheduler.state_dict()`)
-- PyTorch AMP GradScaler state dict (`scaler.state_dict()`)
-- RNG states: PyTorch CPU, PyTorch CUDA (all devices), Python `random`, and NumPy `np.random`
+- Serializes weights into `model.safetensors` and hashes them (`SHA-256`) into `manifest.json`.
+- Infers `ModelSchema` automatically when `sample_input` is provided and `schema` is omitted.
+- Sets `is_checkpoint=True` automatically when `optimizer`, `scheduler`, or `scaler` is provided, saving `train_state.pt` with optimizer, scheduler, scaler, and 4 RNG states (PyTorch CPU, all CUDA devices, NumPy, Python).
 
 ---
 
@@ -54,15 +43,12 @@ def load_bundle(
     bundle_path: str | Path,
     map_location: Any = "cpu",
     model: nn.Module | None = None,
-) -> LoadedBundle | LoadedONNXBundle:
+) -> LoadedBundle | LoadedONNXBundle
 ```
 
-Universal loader for `.bundle` archives.
-
-### Behaviors
-1. **Cryptographic Integrity Verification**: Verifies SHA-256 of `model.safetensors` against `manifest.json`. If tampered or corrupted, raises `BundleCorruptedError`.
-2. **Architecture Reconstruction**: If `model` is omitted, resolves `family` and `version` from `ModelRegistry` and instantiates the class using `manifest["init_args"]`.
-3. **ONNX Detection**: If the archive is an ONNX bundle (`.onnx.bundle` or `weights_format == 'onnx'`), routes automatically to `load_onnx_bundle` without requiring PyTorch.
+1. Verifies SHA-256 checksum (`BundleCorruptedError` on tampering/corruption).
+2. Reconstructs the model from `ModelRegistry` using `family`, `version`, and `init_args` unless `model=` is supplied.
+3. Automatically routes `.onnx.bundle` archives to `load_onnx_bundle` (zero PyTorch).
 
 ---
 
@@ -77,16 +63,10 @@ def resume_training(
     scaler: Any | None = None,
     restore_rng: bool = True,
     map_location: Any = "cpu",
-) -> ResumeState:
+) -> ResumeState
 ```
 
-Restore complete training state from a checkpoint bundle for exact bit-to-bit resumption after preemption or SIGINT.
-
-### Returns
-`ResumeState` dataclass containing:
-- `epoch`: `int | None` (the epoch at checkpoint time)
-- `step`: `int | None` (the step at checkpoint time)
-- `metrics`: `dict[str, float]` (metrics recorded at checkpoint time)
+Restores weights, optimizer/scheduler/scaler states, and RNG states from a checkpoint bundle. Raises `ResumeStateError` if `train_state.pt` is missing. Returns `ResumeState(epoch, step, metrics, rng_restored)`.
 
 ---
 
@@ -101,18 +81,24 @@ class LoadedBundle:
     bundle_path: Path | None
 ```
 
-Wrapper around a loaded PyTorch model providing schema contract enforcement.
-
-### Methods
-- **`predict(input_data: Any, validate: bool = True) -> Any`**: Forward pass in `eval()` mode. Validates tensor shapes and dtypes against `self.schema` before execution.
-- **`__call__(input_data: Any, validate: bool = True) -> Any`**: Alias for `predict()`.
+Methods: `predict(input_data: Any, validate: bool = True) -> Any`, `__call__(...)`.
 
 ---
 
-## `read_bundle_manifest`
+## Zero-Torch Readers
+
+### `read_bundle_manifest`
 
 ```python
-def read_bundle_manifest(bundle_path: str | Path) -> dict[str, Any]:
+def read_bundle_manifest(bundle_path: str | Path) -> dict[str, Any]
 ```
 
-Fast manifest reader. Extracts and parses `manifest.json` from a `.bundle` archive without decompressing model weights or allocating GPU/CPU tensor buffers.
+Extracts and parses `manifest.json` without importing PyTorch or reading weights.
+
+### `inspect_bundle_metadata`
+
+```python
+def inspect_bundle_metadata(bundle_path: str | Path) -> dict[str, Any]
+```
+
+Parses `manifest.json`, optional `config.yaml`, ZIP file list, and the 8-byte binary SafeTensors header **without importing PyTorch**, returning `total_params`, `weights_size_bytes`, and per-tensor metadata (`name`, `shape`, `dtype`, `param_count`, `size_bytes`).

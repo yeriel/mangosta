@@ -31,12 +31,13 @@ MANIFEST
 .coverage.*
 htmlcov/
 
-# Documentation build output
+# Documentation build output & isolated docs venv
 site/
 .zensical/
 docs/site/
 docs/.cache/
 docs/.zensical/
+docs/.venv/
 
 # Local data & temp files
 data/
