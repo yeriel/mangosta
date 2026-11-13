@@ -298,6 +298,9 @@ def main() -> None:
     if args.command == "init":
         dest = init_project(args.name, template=args.template)
         print(f"Initialized mangosta project in '{dest}'")
+        print("Next steps:")
+        print("  uv sync")
+        print("  uv run train")
     elif args.command == "inspect":
         inspect_bundle(args.bundle, as_json=args.json)
     elif args.command == "report":

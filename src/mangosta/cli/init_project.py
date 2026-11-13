@@ -298,6 +298,8 @@ packages = ["src", "entrypoints"]
         )
     if "[tool.hatch.build.targets.wheel]" not in updated:
         additions.append('\n[tool.hatch.build.targets.wheel]\npackages = ["src", "entrypoints"]\n')
+    if "package = true" not in updated:
+        additions.append("\n[tool.uv]\npackage = true\n")
 
     if additions or updated != existing:
         final_text = updated.rstrip() + "\n" + "".join(additions) if additions else updated
