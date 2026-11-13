@@ -1,0 +1,31 @@
+# Mangosta v0.4.0 Configuration Schema Reference
+# Strictly validated by `mangosta.load_config(...)` -> `MangostaConfig`.
+# Unknown keys in root, `experiment`, or `training` raise `ConfigError` with typo hints.
+
+experiment:
+  name: "exp_baseline"          # Non-empty string; used as experiment folder under experiments/
+  seed: 42                      # Integer seed for Python, NumPy, and PyTorch (CPU & CUDA)
+  device: "auto"                # "auto" (cuda -> mps -> cpu), "cpu", "cuda", or "mps"
+
+model:
+  family: "sensor_classifier"   # Registered @register_model / @register_trainer family
+  version: "1.0.0"              # SemVer string (resolved via ModelRegistry & TrainerRegistry)
+  init_args:                    # Keyword arguments forwarded to the model __init__
+    in_features: 8
+    hidden_dim: 32
+    num_classes: 3
+
+training:
+  epochs: 10                    # Positive integer (>= 1)
+  batch_size: 16                # Positive integer (>= 1)
+  learning_rate: 0.001          # Float
+  weight_decay: 0.0             # Float
+  amp: false                    # Boolean (torch.amp.autocast + GradScaler on cuda/cpu)
+  grad_clip_norm: null          # Positive float or null
+  patience: null                # Positive integer for EarlyStopping, or null to disable
+  monitor: "val_loss"           # Metric key monitored for model_best.bundle & EarlyStopping
+  monitor_mode: "min"           # "min" or "max"
+
+# Free-form sections (never rejected by strict schema validation)
+data: {}
+custom: {}

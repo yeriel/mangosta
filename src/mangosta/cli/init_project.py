@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
+from typing import Any
 
 
 def init_project(project_name: str = ".", template: str = "default") -> Path:
@@ -400,68 +401,44 @@ package = true
         pyproject_path.write_text(updated, encoding="utf-8")
 
 
+def _copy_skill_tree(src: Any, dst: Path) -> None:
+    """Recursively copy packaged skill resources (SKILL.md, examples/, resources/, scripts/)."""
+    dst.mkdir(parents=True, exist_ok=True)
+    for item in src.iterdir():
+        if item.name == "__pycache__" or item.name.endswith(".pyc"):
+            continue
+        target = dst / item.name
+        if item.is_dir():
+            _copy_skill_tree(item, target)
+        elif item.is_file():
+            target.write_bytes(item.read_bytes())
+
+
 def _write_meta(dest: Path) -> None:
     project_slug = dest.name.replace(" ", "_").replace("-", "_")
 
     # pyproject.toml (preserves existing [tool.uv.sources] / editable dependencies)
     _ensure_pyproject(dest, project_slug)
 
-    # .agents/skills/mangosta/SKILL.md
-    # Load canonical skill from packaged data or repository source
-    skill_content: str | None = None
+    # .agents/skills/mangosta/ (SKILL.md + examples/ + resources/ + scripts/)
+    skill_dest = dest / ".agents" / "skills" / "mangosta"
+    copied = False
     try:
         import importlib.resources as pkg_resources
 
-        skill_file = pkg_resources.files("mangosta") / "skills" / "mangosta" / "SKILL.md"
-        skill_content = skill_file.read_text(encoding="utf-8")
+        skill_root = pkg_resources.files("mangosta") / "skills" / "mangosta"
+        if skill_root.is_dir():
+            _copy_skill_tree(skill_root, skill_dest)
+            copied = True
     except Exception:
         pass
 
-    if skill_content is None:
-        repo_skill = Path(__file__).resolve().parent.parent.parent.parent / "skills" / "mangosta" / "SKILL.md"
-        if repo_skill.is_file():
-            skill_content = repo_skill.read_text(encoding="utf-8")
+    if not copied:
+        local_skill = Path(__file__).resolve().parent.parent / "skills" / "mangosta"
+        if local_skill.is_dir():
+            _copy_skill_tree(local_skill, skill_dest)
 
-    if skill_content is not None:
-        (dest / ".agents" / "skills" / "mangosta" / "SKILL.md").write_text(skill_content, encoding="utf-8")
-    else:
-        # Fallback inline instructions if package resource is unavailable
-        agent_instructions = """# Agent Instructions: Mangosta Project Conventions
-
-This project uses **Mangosta** for PyTorch model lifecycle management, experiment tracking, and artifact packaging.
-Adhere to the following rules when reading, modifying, or executing code in this repository:
-
-## 1. Operating Rules
-- **No Background Daemons or External Servers**: All tracking is local and offline. Never attempt to spin up Docker, MLflow servers, or background web processes.
-- **Tracking Standard**: Always track runs using `with RunTracker(experiment=..., root_dir="experiments") as run:`.
-- **Metrics and Logging**:
-  - Log scalar metrics: `run.log_metrics({"train/loss": loss.item()}, step=epoch)`.
-  - Log parameters: `run.log_params({"lr": 1e-3, "optimizer": "AdamW"})`.
-  - Log temporal validation samples: `run.log_validation_sample(sample_id="sample_01", prediction=pred_np, input_image=input_np, ground_truth=gt_np, step=epoch)`.
-- **Model Registration**:
-  - Always register architectures with `@register_model(family="<name>", version="<semver>")`.
-  - Never bypass the registry for production bundles. Reconstruct models with `ModelRegistry.build()`.
-- **Packaging with `save_bundle`**:
-  - Training checkpoint: pass `optimizer=optimizer, scheduler=scheduler, epoch=epoch` to `save_bundle()`. Mangosta automatically packages training state and exact RNG seeds for bit-to-bit resumption.
-  - Final inference model: omit optimizer/scheduler to produce a lightweight deployment bundle with SafeTensors weights and `ModelSchema` contract.
-- **Deterministic Resumption with `resume_training`**:
-  - To resume interrupted runs: `resume_state = resume_training(bundle_path, model, optimizer, scheduler, restore_rng=True)`.
-- **Production Serving vs Training**:
-  - For zero-PyTorch production microservices (~70MB Docker): export with `export_onnx_as_bundle(bundle_or_model, "deploy/model.onnx.bundle")` and serve with `mangosta.serving.ONNXRunner.predict(numpy_array)`.
-- **Decoupled PyTorch Inference with `load_bundle`**:
-  - `bundle = load_bundle("path/to.bundle")` reconstructs the model and validates inputs via `bundle.predict(sample)`.
-
-## 2. Common Commands
-- Train model: `uv run train` or `uv run python -m entrypoints.train`
-- Run inference: `uv run infer`
-- Benchmark latency: `uv run benchmark`
-- Inspect bundle metadata (<5ms SafeTensors header parsing): `uv run mangosta inspect checkpoints/model_final.bundle --json`
-- Generate offline HTML report: `uv run mangosta report experiments/<exp>/<run> -o report.html`
-- Local web visualizer (zero daemons): `uv run mangosta view`
-"""
-        (dest / ".agents" / "skills" / "mangosta" / "SKILL.md").write_text(agent_instructions, encoding="utf-8")
-
-    # AGENTS.md (Root agent guidelines: KISS + SOLID principles & pointers to .agents/)
+    # AGENTS.md (Root agent guidelines: KISS + SOLID principles & pointers to .agents/skills/mangosta/)
     agents_root = """# AGENTS.md - Development & Architectural Guidelines
 
 This project follows **KISS** (Keep It Simple, Stupid) and **SOLID** engineering principles, powered by [Mangosta](https://github.com/yeriel/mangosta) for PyTorch model lifecycle management.
@@ -470,23 +447,26 @@ This project follows **KISS** (Keep It Simple, Stupid) and **SOLID** engineering
 
 - **KISS (Keep It Simple, Stupid)**:
   - Avoid unnecessary abstractions, background daemons, or heavy external microservices.
-  - Prefer flat, local, atomic file operations (SafeTensors, JSONL, standard directories).
-  - Write straightforward, readable Python over premature optimization.
-  - Stick to established entrypoint patterns (`train`, `infer`, `benchmark`).
+  - Prefer flat, local, atomic file operations (SafeTensors, JSONL, `.bundle` ZIPs, YAML configs).
+  - Use `BaseTrainer` and `MangostaConfig` (`load_config`) instead of reimplementing training loops, AMP, EarlyStopping, or RNG checkpointing.
+  - Stick to established entrypoint patterns (`uv run train`, `uv run infer`, `uv run benchmark`).
 
 - **SOLID Principles**:
-  - **Single Responsibility (SRP)**: Distinct layers for configuration (`configs/`), data & architectures (`src/`), orchestration entrypoints (`entrypoints/`), and artifact storage.
-  - **Open/Closed (OCP)**: Extend model architectures via `@register_model` without altering core pipeline mechanisms.
-  - **Liskov Substitution (LSP)**: All neural network modules inherit predictably from standard `torch.nn.Module`.
-  - **Interface Segregation (ISP)**: Separate training logic (PyTorch native) from production serving (pure NumPy + ONNX).
-  - **Dependency Inversion (DIP)**: Models are instantiated dynamically from configurations via `ModelRegistry.build()`.
+  - **Single Responsibility (SRP)**: Distinct layers for strict config (`configs/`), data, models & trainers (`src/`), and orchestration entrypoints (`entrypoints/`).
+  - **Open/Closed (OCP)**: Extend architectures and trainers via `@register_model` and `@register_trainer` without altering core pipeline mechanisms.
+  - **Liskov Substitution (LSP)**: All neural network modules inherit from `torch.nn.Module`, and custom trainers inherit from `BaseTrainer`.
+  - **Interface Segregation (ISP)**: Separate training logic (`mangosta[full]`) from zero-PyTorch production serving (`mangosta[serving]` + `ONNXRunner`).
+  - **Dependency Inversion (DIP)**: Models and trainers are instantiated dynamically from `MangostaConfig` via `ModelRegistry.build_from_config(cfg)` and `TrainerRegistry.build_from_config(cfg, model=model)`.
 
 ## 2. Agent Context & Deep Mangosta Documentation
 
-All comprehensive operational rules, canonical patterns, and exception remediations are located in:
-- **Official Antigravity / Cursor Skill**: [`.agents/skills/mangosta/SKILL.md`](.agents/skills/mangosta/SKILL.md)
+All operational rules, v0.4.0 APIs, and exception remediations live in:
+- **Official Skill Guide**: [`.agents/skills/mangosta/SKILL.md`](.agents/skills/mangosta/SKILL.md)
+- **Config Schema Reference**: [`.agents/skills/mangosta/resources/config_schema.yaml`](.agents/skills/mangosta/resources/config_schema.yaml)
+- **Reference Examples**: [`.agents/skills/mangosta/examples/`](.agents/skills/mangosta/examples/)
+- **Project Validator Script**: [`.agents/skills/mangosta/scripts/verify_project.py`](.agents/skills/mangosta/scripts/verify_project.py)
 
-Always refer to `.agents/skills/mangosta/SKILL.md` before generating training loops, checkpointing logic, or deployment pipelines.
+Always refer to `.agents/skills/mangosta/SKILL.md` before modifying configs, training loops, checkpointing, or serving pipelines.
 """
     (dest / "AGENTS.md").write_text(agents_root, encoding="utf-8")
 
