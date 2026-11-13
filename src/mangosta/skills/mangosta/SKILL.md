@@ -22,7 +22,8 @@ When reading, generating, or debugging code with `mangosta`, adhere strictly to 
 
 | Package | Responsibility | Primary APIs |
 | :--- | :--- | :--- |
-| **`mangosta.core`** | Immutable architecture registration & tensor I/O contracts. | `ModelRegistry`, `@register_model`, `ModelSchema`, `TensorSpec`, `infer_schema` |
+| **`mangosta.core`** | Immutable architecture & trainer registration, strict config & tensor I/O contracts. | `ModelRegistry`, `TrainerRegistry`, `@register_model`, `@register_trainer`, `MangostaConfig`, `load_config`, `seed_everything`, `ModelSchema`, `TensorSpec`, `infer_schema` |
+| **`mangosta.engine`** | White-box PyTorch training orchestration with automated tracking, bundles, AMP & RNG resume. | `BaseTrainer` |
 | **`mangosta.artifacts`** | Atomic ZIP `.bundle` creation, decoupled loading & state recovery. | `save_bundle`, `load_bundle`, `resume_training`, `read_bundle_manifest` |
 | **`mangosta.tracking`** | Atomic step metrics logging, validation timelapses & reporting. | `RunTracker`, `quick_track`, `generate_report`, `start_viewer` |
 | **`mangosta.export`** | Decoupled ONNX graph export with FP16 and unrolling. | `export_onnx`, `export_onnx_as_bundle` |
@@ -225,14 +226,44 @@ uv run mangosta report experiments/image_classification/baseline_adamw -o report
 uv run mangosta view
 ```
 
+### Pattern 7: Declarative Training with `BaseTrainer`, `TrainerRegistry` & `MangostaConfig`
+```python
+from mangosta import (
+    BaseTrainer,
+    ModelRegistry,
+    TrainerRegistry,
+    load_config,
+    register_trainer,
+)
+
+@register_trainer(family="vision_classifier", version="1.0.0")
+class VisionTrainer(BaseTrainer):
+    def training_step(self, batch):
+        x, y = batch
+        return self.criterion(self.model(x), y)
+
+    def validation_step(self, batch):
+        x, y = batch
+        preds = self.model(x)
+        return {"val_loss": self.criterion(preds, y)}
+
+# Strict YAML config loading (catches typos with 'Did you mean...?' & logs defaults)
+cfg = load_config("configs/exp_baseline.yaml")
+model = ModelRegistry.build_from_config(cfg)
+trainer = TrainerRegistry.build_from_config(cfg, model=model)
+trainer.fit(train_loader, val_loader, resume_from=None)
+```
+
 ---
 
 ## 6. Structured Exception Reference & Remediation
 
 | Exception | Root Cause | Programmatic Remediation (`hint`) |
 | :--- | :--- | :--- |
+| `ConfigError` | Unknown YAML key (typo) or invalid type in `MangostaConfig`. | Fix the misspelled key suggested in the error message or move custom fields under `data:` / `custom:`. |
 | `RegistryCollisionError` | Attempted to register duplicate `(family, version)`. | Bump semantic version (e.g. `1.1.0`) or pass `allow_override=True`. |
 | `ModelNotFoundError` | Requested architecture not found in `ModelRegistry`. | Ensure the module containing `@register_model` is imported. |
+| `TrainerNotFoundError` | Requested trainer not found in `TrainerRegistry`. | Ensure the module containing `@register_trainer` is imported. |
 | `SchemaValidationError` | Input tensor or NumPy array violates schema contract. | Verify array dimensions against `bundle.schema.inputs`. |
 | `ResumeStateError` | Attempted to resume from a bundle lacking `train_state.pt`. | Verify bundle was saved with `optimizer=` to capture training state. |
 | `BundleCorruptedError` | Missing archive files or SHA-256 hash mismatch. | Archive integrity compromised; re-export or restore from verified source. |

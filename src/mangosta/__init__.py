@@ -16,7 +16,15 @@ except ImportError:
 # Scaffolding / CLI
 from mangosta.cli.init_project import init_project
 
-# Core contracts and schema (works with or without PyTorch)
+# Core contracts, config, and schema (works with or without PyTorch)
+from mangosta.core.config import (
+    ExperimentConfig,
+    MangostaConfig,
+    ModelConfig,
+    TrainingConfig,
+    load_config,
+    seed_everything,
+)
 from mangosta.core.schema import (
     ModelSchema,
     TensorSpec,
@@ -28,6 +36,7 @@ from mangosta.exceptions import (
     BundleCorruptedError,
     BundleError,
     ComponentNotFoundError,
+    ConfigError,
     MangostaError,
     ModelNotFoundError,
     RegistryCollisionError,
@@ -35,6 +44,7 @@ from mangosta.exceptions import (
     ResumeStateError,
     SchemaError,
     SchemaValidationError,
+    TrainerNotFoundError,
 )
 
 # Serving abstractions (zero PyTorch dependency)
@@ -58,10 +68,13 @@ if HAS_TORCH:
     )
     from mangosta.core import (
         ModelRegistry,
+        TrainerRegistry,
         infer_schema,
         register_component,
         register_model,
+        register_trainer,
     )
+    from mangosta.engine import BaseTrainer
     from mangosta.export import export_onnx, export_onnx_as_bundle
     from mangosta.tracking import (
         RunTracker,
@@ -71,13 +84,19 @@ if HAS_TORCH:
         start_viewer,
     )
 
-__version__ = "0.3.1"
+__version__ = "0.4.0"
 
 _BASE_ALL = [
     "__version__",
     # CLI / Scaffolding
     "init_project",
-    # Core contracts
+    # Core config & contracts
+    "ExperimentConfig",
+    "ModelConfig",
+    "TrainingConfig",
+    "MangostaConfig",
+    "load_config",
+    "seed_everything",
     "ModelSchema",
     "TensorSpec",
     "infer_schema_from_sample",
@@ -89,9 +108,11 @@ _BASE_ALL = [
     "load_onnx_bundle",
     # Exceptions
     "MangostaError",
+    "ConfigError",
     "RegistryError",
     "RegistryCollisionError",
     "ModelNotFoundError",
+    "TrainerNotFoundError",
     "ComponentNotFoundError",
     "SchemaError",
     "SchemaValidationError",
@@ -101,10 +122,13 @@ _BASE_ALL = [
 ]
 
 _TORCH_ALL = [
-    # Core Registry & Schema
+    # Core Registry, Engine & Schema
     "register_model",
+    "register_trainer",
     "register_component",
     "ModelRegistry",
+    "TrainerRegistry",
+    "BaseTrainer",
     "infer_schema",
     # Tracking
     "RunTracker",

@@ -19,8 +19,16 @@ class ModelNotFoundError(RegistryError):
     """Raised when a requested model architecture or version is not found in the registry."""
 
 
+class TrainerNotFoundError(RegistryError):
+    """Raised when a requested trainer or version is not found in the registry."""
+
+
 class ComponentNotFoundError(RegistryError):
     """Raised when a requested auxiliary component is not found in the registry."""
+
+
+class ConfigError(MangostaError):
+    """Raised when a configuration YAML or MangostaConfig fails validation."""
 
 
 class SchemaError(MangostaError):

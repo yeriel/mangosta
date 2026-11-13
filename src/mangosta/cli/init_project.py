@@ -41,28 +41,51 @@ def _write_configs(dest: Path) -> None:
     exp_baseline_yaml = """experiment:
   name: "exp_baseline"
   seed: 42
-  device: "cpu"  # "cuda" or "cpu"
+  device: "auto"  # "auto", "cuda", "cpu", "mps"
 
 model:
   family: "sensor_classifier"
   version: "1.0.0"
-  in_features: 8
-  hidden_dim: 32
-  num_classes: 3
+  init_args:
+    in_features: 8
+    hidden_dim: 32
+    num_classes: 3
 
 training:
   epochs: 5
   batch_size: 16
   learning_rate: 0.001
+  weight_decay: 0.0001
+  amp: false
+  grad_clip_norm: null
+  patience: null
+  monitor: "val_loss"
+  monitor_mode: "min"
 """
     (dest / "configs" / "exp_baseline.yaml").write_text(exp_baseline_yaml, encoding="utf-8")
 
 
 def _write_source(dest: Path) -> None:
+    data_code = """import torch
+from torch.utils.data import DataLoader, TensorDataset
+from mangosta import MangostaConfig
+
+
+def build_dataloaders(cfg: MangostaConfig) -> tuple[DataLoader, DataLoader]:
+    \"\"\"Build standard PyTorch train and validation DataLoaders.\"\"\"
+    torch.manual_seed(cfg.experiment.seed)
+    x = torch.randn(200, 8)
+    y = torch.randint(0, 3, (200,))
+    bs = cfg.training.batch_size
+    train_loader = DataLoader(TensorDataset(x[:160], y[:160]), batch_size=bs, shuffle=True)
+    val_loader = DataLoader(TensorDataset(x[160:], y[160:]), batch_size=bs, shuffle=False)
+    return train_loader, val_loader
+"""
+    (dest / "src" / "data.py").write_text(data_code, encoding="utf-8")
+
     models_code = """import torch
 import torch.nn as nn
-from typing import Any
-from mangosta import register_model, ModelRegistry
+from mangosta import BaseTrainer, MangostaConfig, register_model, register_trainer
 
 
 @register_model(family="sensor_classifier", version="1.0.0")
@@ -80,13 +103,22 @@ class SensorClassifier(nn.Module):
         return self.net(x)
 
 
-def build_model(config: dict[str, Any]) -> nn.Module:
-    \"\"\"Reconstruct model architecture from configuration dictionary using ModelRegistry.\"\"\"
-    model_cfg = config.get("model", {})
-    family = model_cfg.get("family", "sensor_classifier")
-    version = str(model_cfg.get("version", "1.0.0"))
-    init_args = {k: v for k, v in model_cfg.items() if k not in ("family", "version")}
-    return ModelRegistry.build(family, version=version, **init_args)
+@register_trainer(family="sensor_classifier", version="1.0.0")
+class SensorTrainer(BaseTrainer):
+    def __init__(self, model: nn.Module, config: MangostaConfig | dict | None = None, **kwargs) -> None:
+        super().__init__(model, config, **kwargs)
+        self.criterion = nn.CrossEntropyLoss()
+
+    def training_step(self, batch: tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
+        x, y = batch
+        return self.criterion(self.model(x), y)
+
+    def validation_step(self, batch: tuple[torch.Tensor, torch.Tensor]) -> dict[str, torch.Tensor]:
+        x, y = batch
+        preds = self.model(x)
+        loss = self.criterion(preds, y)
+        acc = (preds.argmax(dim=-1) == y).float().mean()
+        return {"val_loss": loss, "val_acc": acc}
 """
     (dest / "src" / "models.py").write_text(models_code, encoding="utf-8")
 
@@ -102,91 +134,31 @@ project_root = Path(__file__).resolve().parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-import yaml
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader, TensorDataset
-from mangosta import RunTracker, save_bundle
-from src.models import build_model
-
-
-def get_dataloaders(batch_size: int = 16) -> tuple[DataLoader, DataLoader]:
-    torch.manual_seed(42)
-    x = torch.randn(200, 8)
-    y = torch.randint(0, 3, (200,))
-    train_loader = DataLoader(TensorDataset(x[:160], y[:160]), batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(TensorDataset(x[160:], y[160:]), batch_size=batch_size, shuffle=False)
-    return train_loader, val_loader
+from mangosta import ModelRegistry, TrainerRegistry, load_config
+import src.models  # Register models and trainers
+from src.data import build_dataloaders
 
 
 def main():
     parser = argparse.ArgumentParser(description="Mangosta Training Pipeline")
     parser.add_argument("--config", default="configs/exp_baseline.yaml", help="Path to config YAML")
     parser.add_argument("--epochs", type=int, default=None, help="Override epochs")
+    parser.add_argument("--resume", default=None, help="Path to checkpoint .bundle to resume")
     args = parser.parse_args()
 
-    cfg_path = Path(args.config)
-    with open(cfg_path, "r", encoding="utf-8") as f:
-        config = yaml.safe_load(f)
+    cfg = load_config(args.config)
+    train_loader, val_loader = build_dataloaders(cfg)
 
-    exp_cfg = config.get("experiment", {})
-    train_cfg = config.get("training", {})
-    model_cfg = config.get("model", {})
-    epochs = args.epochs or train_cfg.get("epochs", 5)
-    lr = train_cfg.get("learning_rate", 0.001)
-    bs = train_cfg.get("batch_size", 16)
+    model = ModelRegistry.build_from_config(cfg)
+    trainer = TrainerRegistry.build_from_config(cfg, model=model)
 
-    family = model_cfg.get("family", "sensor_classifier")
-    version = str(model_cfg.get("version", "1.0.0"))
-    init_args = {k: v for k, v in model_cfg.items() if k not in ("family", "version")}
-
-    train_loader, val_loader = get_dataloaders(bs)
-    model = build_model(config)
-    optimizer = optim.Adam(model.parameters(), lr=lr)
-    criterion = nn.CrossEntropyLoss()
-
-    with RunTracker(experiment=exp_cfg.get("name", "baseline"), root_dir="experiments") as run:
-        run.log_params(train_cfg)
-
-        for epoch in range(1, epochs + 1):
-            model.train()
-            total_loss = 0.0
-            for bx, by in train_loader:
-                optimizer.zero_grad()
-                out = model(bx)
-                loss = criterion(out, by)
-                loss.backward()
-                optimizer.step()
-                total_loss += loss.item()
-
-            avg_loss = total_loss / len(train_loader)
-            run.log_metrics({"epoch_loss": avg_loss}, step=epoch)
-            print(f"Epoch {epoch}/{epochs} complete | Loss: {avg_loss:.4f}")
-
-        # Checkpoint bundle (smart default: detects optimizer -> is_checkpoint=True)
-        ckpt_path = save_bundle(
-            output_path="checkpoints/model_checkpoint.bundle",
-            model=model,
-            sample_input=torch.randn(1, 8),
-            optimizer=optimizer,
-            epoch=epochs,
-            family=family,
-            version=version,
-            init_args=init_args,
-        )
-
-        # Final production model (smart default: no optimizer -> is_checkpoint=False)
-        final_path = save_bundle(
-            output_path="checkpoints/model_final.bundle",
-            model=model,
-            sample_input=torch.randn(1, 8),
-            family=family,
-            version=version,
-            init_args=init_args,
-        )
-
-        print(f"Training finished. Checkpoint: {ckpt_path.name} | Production: {final_path.name}")
+    result = trainer.fit(
+        train_loader=train_loader,
+        val_loader=val_loader,
+        epochs=args.epochs,
+        resume_from=args.resume,
+    )
+    print(f"Training finished. Final production bundle: {result['final_bundle']}")
 
 
 if __name__ == "__main__":
