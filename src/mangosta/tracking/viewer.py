@@ -9,7 +9,6 @@ Provides an "Industrial Dark / Craft DX" local dashboard featuring:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import http.server
 import importlib.metadata
 import json
@@ -17,6 +16,7 @@ import re
 import socketserver
 import urllib.parse
 import webbrowser
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 

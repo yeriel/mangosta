@@ -194,15 +194,14 @@ Full documentation, architecture guides, and API reference are available at:
 
 To run the documentation locally:
 ```bash
-cd docs
-uv tool run zensical serve
+uv --directory docs run zensical serve
 ```
 
 ---
 
 ## AI Agent Integration (Antigravity & Cursor Skill)
 
-`mangosta` includes a native Agent Skill specification at [`skills/mangosta/SKILL.md`](skills/mangosta/SKILL.md). When copied to `.agents/skills/mangosta/SKILL.md` in your projects, AI assistants (Cursor, Claude Code, Antigravity) automatically follow defensive patterns:
+`mangosta` includes a native Agent Skill specification at [`src/mangosta/skills/mangosta/SKILL.md`](src/mangosta/skills/mangosta/SKILL.md). When copied to `.agents/skills/mangosta/SKILL.md` in your projects, AI assistants (Cursor, Claude Code, Antigravity) automatically follow defensive patterns:
 - Always registering architectures with `@register_model`.
 - Using `save_bundle` and `resume_training` instead of unsafe `pickle`/`torch.save`.
 - Querying bundle metadata via `uv run mangosta inspect <bundle> --json` to prevent token waste.

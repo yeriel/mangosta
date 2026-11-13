@@ -13,6 +13,10 @@ except ImportError:
     torch = None  # type: ignore[assignment]
     HAS_TORCH = False
 
+# Universal bundle loader & manifest reader
+from mangosta.artifacts.bundle import inspect_bundle_metadata, read_bundle_manifest
+from mangosta.artifacts.loader import load_bundle
+
 # Scaffolding / CLI
 from mangosta.cli.init_project import init_project
 
@@ -54,19 +58,15 @@ from mangosta.serving.runner import (
     load_onnx_bundle,
 )
 
-# Universal bundle loader & manifest reader
-from mangosta.artifacts.loader import load_bundle
-from mangosta.artifacts.bundle import inspect_bundle_metadata, read_bundle_manifest
-
-# Training & PyTorch-specific components (loaded conditionally)
+# Training & PyTorch-specific components (loaded conditionally; listed in _TORCH_ALL)
 if HAS_TORCH:
-    from mangosta.artifacts import (
+    from mangosta.artifacts import (  # noqa: F401
         LoadedBundle,
         ResumeState,
         resume_training,
         save_bundle,
     )
-    from mangosta.core import (
+    from mangosta.core import (  # noqa: F401
         ModelRegistry,
         TrainerRegistry,
         infer_schema,
@@ -74,9 +74,9 @@ if HAS_TORCH:
         register_model,
         register_trainer,
     )
-    from mangosta.engine import BaseTrainer
-    from mangosta.export import export_onnx, export_onnx_as_bundle
-    from mangosta.tracking import (
+    from mangosta.engine import BaseTrainer  # noqa: F401
+    from mangosta.export import export_onnx, export_onnx_as_bundle  # noqa: F401
+    from mangosta.tracking import (  # noqa: F401
         RunTracker,
         compute_sha256,
         quick_track,
@@ -85,7 +85,7 @@ if HAS_TORCH:
 
 __version__ = "0.4.0"
 
-_BASE_ALL = [
+__all__ = [
     "__version__",
     # CLI / Scaffolding
     "init_project",
@@ -146,9 +146,7 @@ _TORCH_ALL = [
 ]
 
 if HAS_TORCH:
-    __all__ = _BASE_ALL + _TORCH_ALL
-else:
-    __all__ = _BASE_ALL
+    __all__ += _TORCH_ALL
 
 
 def __getattr__(name: str) -> Any:
