@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import struct
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
@@ -298,9 +300,11 @@ def main() -> None:
     if args.command == "init":
         dest = init_project(args.name, template=args.template)
         print(f"Initialized mangosta project in '{dest}'")
-        print("Next steps:")
-        print("  uv sync")
-        print("  uv run train")
+        uv_bin = shutil.which("uv")
+        if uv_bin is not None:
+            res = subprocess.run([uv_bin, "sync"], cwd=dest, check=False)
+            if res.returncode != 0:
+                print("Warning: 'uv sync' did not complete; run 'uv sync' manually if needed.")
     elif args.command == "inspect":
         inspect_bundle(args.bundle, as_json=args.json)
     elif args.command == "report":
