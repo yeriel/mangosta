@@ -156,8 +156,8 @@ def __getattr__(name: str) -> Any:
     if not HAS_TORCH and name in _TORCH_ALL:
         raise ImportError(
             f"'{name}' requires PyTorch to be installed.\n"
-            "To use training, tracking, and export features, please install PyTorch:\n"
-            "  `pip install torch` or `pip install 'mangosta[train]'`\n"
+            "To use training, tracking, and export features, please install:\n"
+            "  `uv add 'mangosta[full]'` (or `pip install 'mangosta[full]'`)\n"
             "For production serving without PyTorch, use `mangosta.load_bundle()`, "
             "`mangosta.ONNXRunner`, or `mangosta.ModelSchema`."
         )

@@ -62,7 +62,7 @@ flowchart TD
 ## 3. Environment & Installation Guidelines (Standard: `uv`)
 
 All commands and execution workflows should standardize on `uv`:
-- **Full Development Toolkit**: `uv add "mangosta[all]"` (installs PyTorch, SafeTensors, ONNX, and ONNX Runtime).
+- **Full Development Toolkit**: `uv add "mangosta[full]"` (installs PyTorch, SafeTensors, ONNX, and ONNX Runtime).
 - **Zero-PyTorch Microservices**: `uv add "mangosta[serving]"` (installs ONNX Runtime, NumPy, PyYAML).
 - **CLI Commands Execution**: Always run CLI commands through `uv run mangosta <command>` inside projects.
 
@@ -267,4 +267,4 @@ trainer.fit(train_loader, val_loader, resume_from=None)
 | `SchemaValidationError` | Input tensor or NumPy array violates schema contract. | Verify array dimensions against `bundle.schema.inputs`. |
 | `ResumeStateError` | Attempted to resume from a bundle lacking `train_state.pt`. | Verify bundle was saved with `optimizer=` to capture training state. |
 | `BundleCorruptedError` | Missing archive files or SHA-256 hash mismatch. | Archive integrity compromised; re-export or restore from verified source. |
-| `ImportError` | Attempted to use PyTorch-only function in slim environment. | Use `mangosta.serving` primitives or install PyTorch (`pip install torch` / `uv add 'mangosta[train]'`). |
+| `ImportError` | Attempted to use PyTorch-only function in slim environment. | Use `mangosta.serving` primitives or install PyTorch (`uv add 'mangosta[full]'`). |

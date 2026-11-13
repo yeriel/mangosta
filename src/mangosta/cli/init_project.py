@@ -250,7 +250,7 @@ if __name__ == "__main__":
 
 
 def _ensure_pyproject(dest: Path, project_slug: str) -> None:
-    """Create pyproject.toml if missing, or safely append missing script/build sections if present."""
+    """Create pyproject.toml if missing, or safely preserve [tool.uv.sources] and ensure full runtime."""
     pyproject_path = dest / "pyproject.toml"
     if not pyproject_path.exists():
         pyproject_content = f"""[project]
@@ -260,10 +260,7 @@ description = "PyTorch project powered by Mangosta"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "mangosta[all]",
-    "torch>=2.0.0",
-    "pyyaml>=6.0",
-    "numpy>=2.0.0",
+    "mangosta[full]",
 ]
 
 [project.scripts]
@@ -283,22 +280,28 @@ packages = ["src", "entrypoints"]
 
     # Preserve existing pyproject.toml (especially [tool.uv.sources] and dependencies!)
     existing = pyproject_path.read_text(encoding="utf-8")
-    additions: list[str] = []
+    updated = existing
 
-    if "[project.scripts]" not in existing:
+    # Upgrade bare "mangosta" dependency to "mangosta[full]" if no extra was selected
+    if '"mangosta"' in updated and '"mangosta[' not in updated:
+        updated = updated.replace('"mangosta"', '"mangosta[full]"', 1)
+
+    additions: list[str] = []
+    if "[project.scripts]" not in updated:
         additions.append(
             '\n[project.scripts]\ntrain = "entrypoints.train:main"\n'
             'infer = "entrypoints.infer:main"\nbenchmark = "entrypoints.benchmark:main"\n'
         )
-    if "[build-system]" not in existing:
+    if "[build-system]" not in updated:
         additions.append(
             '\n[build-system]\nrequires = ["hatchling"]\nbuild-backend = "hatchling.build"\n'
         )
-    if "[tool.hatch.build.targets.wheel]" not in existing:
+    if "[tool.hatch.build.targets.wheel]" not in updated:
         additions.append('\n[tool.hatch.build.targets.wheel]\npackages = ["src", "entrypoints"]\n')
 
-    if additions:
-        pyproject_path.write_text(existing.rstrip() + "\n" + "".join(additions), encoding="utf-8")
+    if additions or updated != existing:
+        final_text = updated.rstrip() + "\n" + "".join(additions) if additions else updated
+        pyproject_path.write_text(final_text, encoding="utf-8")
 
 
 def _write_meta(dest: Path) -> None:

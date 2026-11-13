@@ -57,24 +57,22 @@ flowchart LR
 
 Mangosta standardizes on **`uv`** as the package and environment manager.
 
-### Recommended for Development: `mangosta[all]`
+### Recommended for Development: `mangosta[full]`
 
-For local development, research, and experimentation, install the complete toolkit (Training + ONNX Export + Serving):
+For local development, research, training, and ONNX export, install the complete toolkit:
 
 ```bash
 # In your project:
-uv add "mangosta[all]"
+uv add "mangosta[full]"
 ```
 
-### Installation Targets by Environment
+### Installation Targets
 
-| Target / Extra | Command | What It Installs | When to Use |
+| Target | Command | What It Installs | When to Use |
 | :--- | :--- | :--- | :--- |
-| **Full Toolkit** *(Recommended)* | `uv add "mangosta[all]"` | PyTorch, SafeTensors, ONNX, ONNX Runtime | **Local development**, experiments, full pipeline |
-| **Training Only** | `uv add "mangosta[train]"` | PyTorch, SafeTensors | GPU training servers / clusters |
+| **Full Toolkit** *(Recommended)* | `uv add "mangosta[full]"` | PyTorch, SafeTensors, ONNX, ONNX Runtime | **Development, training, and ONNX export** |
 | **Production Serving** | `uv add "mangosta[serving]"` | ONNX Runtime, NumPy, PyYAML | **Zero-PyTorch containers (`~70MB`)** |
-| **ONNX Export** | `uv add "mangosta[onnx]"` | ONNX | Model export and graph verification |
-| **Minimal Base** | `uv add mangosta` | NumPy, PyYAML, Packaging | Schema contracts & CLI inspection only |
+| **Minimal Base** | `uv add mangosta` | NumPy, PyYAML, Packaging | CLI scaffolding (`init`) & JSON inspection only |
 
 ---
 
@@ -249,7 +247,7 @@ uv run ruff check src/mangosta
 To test in a separate project locally:
 ```bash
 # In your test project directory:
-uv add --editable "/path/to/mangosta[all]"
+uv add --editable "/path/to/mangosta[full]"
 ```
 
 ---
