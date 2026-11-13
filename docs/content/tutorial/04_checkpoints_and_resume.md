@@ -90,6 +90,4 @@ print(f"Resuming from epoch {state.epoch + 1} (step {state.step})")
 
 ---
 
-**Companion script:** [`examples/02_model_checkpoint_and_deterministic_resume.py`](https://github.com/yeriel/mangosta/blob/main/examples/02_model_checkpoint_and_deterministic_resume.py)
-
 **Next step:** [Tracking & `mangosta view`](05_visual_tracking_and_view.md) — visualize curves, compare models side-by-side, and scrub validation predictions.

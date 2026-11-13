@@ -12,19 +12,20 @@ repo_name = "yeriel/mangosta"
 edit_uri = "edit/main/docs/content/"
 
 nav = [
-  { "Overview" = "index.md" },
-  { "Installation" = "installation.md" },
-  { "Tutorial - User Guide" = [
-      { "01. First Project (init)" = "tutorial/01_first_project.md" },
-      { "02. Config & Registries" = "tutorial/02_config_and_registries.md" },
-      { "03. Training with BaseTrainer" = "tutorial/03_training_with_basetrainer.md" },
-      { "04. Checkpoints & RNG Resume" = "tutorial/04_checkpoints_and_resume.md" },
-      { "05. Tracking & mangosta view" = "tutorial/05_visual_tracking_and_view.md" },
-      { "06. ONNX Export & Serving" = "tutorial/06_onnx_export_and_serving.md" },
+  { "Mangosta" = "index.md" },
+  { "Learn" = [
+      { "Installation" = "installation.md" },
+      { "Tutorial - User Guide" = [
+          { "01. First Project (init)" = "tutorial/01_first_project.md" },
+          { "02. Config & Registries" = "tutorial/02_config_and_registries.md" },
+          { "03. Training with BaseTrainer" = "tutorial/03_training_with_basetrainer.md" },
+          { "04. Checkpoints & RNG Resume" = "tutorial/04_checkpoints_and_resume.md" },
+          { "05. Tracking & mangosta view" = "tutorial/05_visual_tracking_and_view.md" },
+          { "06. ONNX Export & Serving" = "tutorial/06_onnx_export_and_serving.md" },
+      ] },
   ] },
-  { "CLI & AI Agents" = "cli_and_agents.md" },
-  { "Examples" = "examples.md" },
-  { "API Reference" = [
+  { "CLI & Agents" = "cli_and_agents.md" },
+  { "Reference" = [
       { "mangosta.core" = "api/core.md" },
       { "mangosta.engine" = "api/engine.md" },
       { "mangosta.artifacts" = "api/artifacts.md" },
@@ -50,6 +51,8 @@ features = [
   "navigation.instant.prefetch",
   "navigation.path",
   "navigation.sections",
+  "navigation.tabs",
+  "navigation.tabs.sticky",
   "navigation.top",
   "navigation.tracking",
   "search.highlight",

@@ -47,7 +47,7 @@ Every dependency group defined in `pyproject.toml`:
 | **Base** *(default)* | `uv add mangosta` | `numpy`, `pyyaml`, `packaging` | `MangostaConfig`, `ModelSchema`, `read_bundle_manifest`, `inspect_bundle_metadata`, `mangosta inspect`. |
 | **`[full]`** | `uv add "mangosta[full]"` | `torch>=2.0`, `safetensors>=0.4`, `onnx>=1.14`, `onnxruntime>=1.16` | Training (`BaseTrainer`), registries, `RunTracker`, `.bundle` checkpointing/resume, and ONNX export. |
 | **`[serving]`** | `uv add "mangosta[serving]"` | `numpy>=2.0`, `onnxruntime>=1.16`, `pyyaml>=6.0`, `packaging>=23.0` | **Zero-PyTorch** production inference via `ONNXRunner` / `load_onnx_bundle`. |
-| **`--group dev`** *(repo only)* | `uv sync --group dev` | `torch`, `safetensors`, `onnx`, `onnxruntime`, `onnxscript`, `mypy`, `ruff` | Contributing to Mangosta, running type checks, and executing repository examples. |
+| **`--group dev`** *(repo only)* | `uv sync --group dev` | `torch`, `safetensors`, `onnx`, `onnxruntime`, `onnxscript`, `mypy`, `ruff` | Contributing to Mangosta, linting, and running strict type checks. |
 
 ---
 

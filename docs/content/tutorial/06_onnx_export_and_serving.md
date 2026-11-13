@@ -82,6 +82,4 @@ predictions = runner.predict(batch)                   # (2)!
 
 ---
 
-**Companion script:** [`examples/03_model_export_and_inspection.py`](https://github.com/yeriel/mangosta/blob/main/examples/03_model_export_and_inspection.py)
-
 **Next step:** Explore [CLI & AI Agents](../cli_and_agents.md) or browse the [API Reference](../api/core.md).

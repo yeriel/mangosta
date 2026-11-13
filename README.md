@@ -187,24 +187,6 @@ Mangosta commands are invoked inside your project using `uv run mangosta <comman
 
 ---
 
-## Canonical Examples (`examples/`)
-
-Explore the 4 self-contained tutorials ordered in logical pedagogical progression:
-
-| # | Example Script | Purpose & Key Concepts |
-| :-: | :--- | :--- |
-| **01** | [`examples/01_lifecycle_training_vs_production.py`](examples/01_lifecycle_training_vs_production.py) | **The Core Lifecycle**: Training with PyTorch vs. Zero-PyTorch production serving (`~70MB` microservice). |
-| **02** | [`examples/02_model_checkpoint_and_deterministic_resume.py`](examples/02_model_checkpoint_and_deterministic_resume.py) | **Checkpointing & Resumption**: Crash-consistent checkpoints with exact bit-to-bit RNG recovery (CPU/CUDA/NumPy/Python). |
-| **03** | [`examples/03_model_export_and_inspection.py`](examples/03_model_export_and_inspection.py) | **Export & Inspection**: Multi-output ONNX export, dynamic axes, `<5ms` inspection, and offline HTML reports. |
-| **04** | [`examples/04_visual_tracking_and_timelapses.py`](examples/04_visual_tracking_and_timelapses.py) | **Visual Tracking & View**: Validation sample timelapses and `uv run mangosta view` dashboard. |
-
-Run any example with `uv`:
-```bash
-uv run python examples/01_lifecycle_training_vs_production.py
-```
-
----
-
 ## Documentation
 
 Full documentation, architecture guides, and API reference are available at:

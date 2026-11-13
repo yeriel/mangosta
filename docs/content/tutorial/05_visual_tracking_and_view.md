@@ -88,6 +88,4 @@ experiments/
 
 ---
 
-**Companion script:** [`examples/04_visual_tracking_and_timelapses.py`](https://github.com/yeriel/mangosta/blob/main/examples/04_visual_tracking_and_timelapses.py)
-
 **Next step:** [ONNX Export & Serving](06_onnx_export_and_serving.md) — export models to ONNX with auto-inferred shapes and serve them in `~70MB` containers without PyTorch.
