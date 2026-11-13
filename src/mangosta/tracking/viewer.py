@@ -1273,8 +1273,10 @@ def _get_dashboard_html() -> str:
       <div class="sidebar-search">
         <input type="text" id="run-search" placeholder="Filter runs..." oninput="renderSidebar()" />
         <div id="compare-bar" class="compare-bar">
-          <span id="compare-count">Comparing 0 runs</span>
-          <button class="compare-clear" onclick="clearComparison()">Clear</button>
+          <span id="compare-count">Compare runs</span>
+          <div id="compare-actions" style="display:flex; gap:4px; align-items:center;">
+            <button class="compare-clear" onclick="clearComparison()">Clear</button>
+          </div>
         </div>
       </div>
       <div id="runs-list">Loading runs...</div>
@@ -1296,6 +1298,7 @@ def _get_dashboard_html() -> str:
             </select>
             <button class="btn" id="scale-linear-btn" onclick="setScale('linear')">Linear</button>
             <button class="btn" id="scale-log-btn" onclick="setScale('log')">Log</button>
+            <button class="btn" id="toolbar-compare-btn" onclick="toggleQuickCompare()" style="display:none; margin-left:6px;"></button>
           </div>
           <div class="control-row">
             <span style="font-size:0.78rem; color:var(--text-muted);">EMA:</span>
@@ -1415,6 +1418,7 @@ def _get_dashboard_html() -> str:
     let currentBundleData = null;
     let selectedBundles = new Set();
     let loadedBundlesCache = {};
+    let discoveredBundles = [];
 
     // Validation Scrubber State
     let currentSampleId = null;
@@ -1501,15 +1505,22 @@ def _get_dashboard_html() -> str:
       container.innerHTML = "";
       orderedRunKeys = [];
 
+      const expNames = Object.keys(experimentsData);
+      const totalRunCount = expNames.reduce((acc, e) => acc + (experimentsData[e] ? experimentsData[e].length : 0), 0);
       const compareBar = document.getElementById("compare-bar");
+      const compareActions = document.getElementById("compare-actions");
       if (selectedRuns.size > 1) {
         compareBar.classList.add("visible");
         document.getElementById("compare-count").textContent = `Comparing ${selectedRuns.size} runs`;
+        compareActions.innerHTML = `<button class="compare-clear" onclick="clearComparison()">Clear</button>`;
+      } else if (totalRunCount >= 2) {
+        compareBar.classList.add("visible");
+        document.getElementById("compare-count").textContent = "Compare runs:";
+        compareActions.innerHTML = `<button class="compare-clear" onclick="quickCompareRuns(2)">Latest 2</button><button class="compare-clear" onclick="quickCompareRuns(0)">All</button>`;
       } else {
         compareBar.classList.remove("visible");
       }
 
-      const expNames = Object.keys(experimentsData);
       if (expNames.length === 0) {
         container.innerHTML = "<div class='empty-state' style='padding:20px;'>No experiment runs found yet.</div>";
         return;
@@ -1525,7 +1536,10 @@ def _get_dashboard_html() -> str:
 
         const group = document.createElement("div");
         group.className = "exp-group";
-        group.innerHTML = `<div class="exp-title"><span>${escapeHtml(expName)}</span><span>${runs.length}</span></div>`;
+        const expCompareBtn = runs.length >= 2
+          ? `<button class="compare-clear" style="font-size:0.66rem; text-transform:none; letter-spacing:0;" onclick="compareExperiment(decodeURIComponent('${encodeURIComponent(expName)}'))">Compare ${runs.length}</button>`
+          : "";
+        group.innerHTML = `<div class="exp-title"><span>${escapeHtml(expName)}</span><span style="display:flex; align-items:center; gap:6px;">${expCompareBtn}<span>${runs.length}</span></span></div>`;
 
         runs.forEach(r => {
           const key = `${expName}:${r.run_name}`;
@@ -1578,6 +1592,45 @@ def _get_dashboard_html() -> str:
       document.getElementById("diff-only-toggle").checked = false;
       renderSidebar();
       renderActiveTab();
+    }
+
+    async function quickCompareRuns(limit = 2) {
+      if (orderedRunKeys.length < 2) return;
+      const targets = limit > 0 ? orderedRunKeys.slice(0, limit) : orderedRunKeys.slice(0, 8);
+      selectedRuns = new Set(targets);
+      if (!activeExp || !activeRun) {
+        const first = targets[0];
+        const idx = first.indexOf(":");
+        activeExp = first.slice(0, idx);
+        activeRun = first.slice(idx + 1);
+      }
+      document.getElementById("diff-only-toggle").checked = true;
+      await syncSelectedRunsData();
+      updateTabCounts();
+      renderSidebar();
+      renderActiveTab();
+    }
+
+    async function compareExperiment(expName) {
+      const runs = experimentsData[expName] || [];
+      if (runs.length < 2) return;
+      const targets = runs.slice(0, 8).map(r => `${expName}:${r.run_name}`);
+      selectedRuns = new Set(targets);
+      activeExp = expName;
+      activeRun = runs[0].run_name;
+      document.getElementById("diff-only-toggle").checked = true;
+      await syncSelectedRunsData();
+      updateTabCounts();
+      renderSidebar();
+      renderActiveTab();
+    }
+
+    function toggleQuickCompare() {
+      if (selectedRuns.size > 1) {
+        clearComparison();
+      } else {
+        quickCompareRuns(2);
+      }
     }
 
     async function selectSingleRun(exp, run) {
@@ -1736,6 +1789,22 @@ def _get_dashboard_html() -> str:
       });
       select.value = Array.from(select.options).some(o => o.value === prevVal) ? prevVal : "__ALL_PAIRED__";
 
+      const cmpBtn = document.getElementById("toolbar-compare-btn");
+      if (cmpBtn) {
+        if (orderedRunKeys.length >= 2) {
+          cmpBtn.style.display = "inline-flex";
+          if (selectedRuns.size > 1) {
+            cmpBtn.textContent = `Comparing ${selectedRuns.size} (Reset)`;
+            cmpBtn.classList.add("active-toggle");
+          } else {
+            cmpBtn.textContent = "Compare Runs";
+            cmpBtn.classList.remove("active-toggle");
+          }
+        } else {
+          cmpBtn.style.display = "none";
+        }
+      }
+
       renderRunComparisonTable();
       renderCharts();
       renderParamDiffTable();
@@ -1811,7 +1880,7 @@ def _get_dashboard_html() -> str:
       const groups = buildChartGroups(Array.from(metricSet).sort());
       grid.innerHTML = "";
 
-      groups.forEach((grp, idx) => {
+      const boxes = groups.map((grp, idx) => {
         const box = document.createElement("div");
         box.className = "chart-box";
         box.innerHTML = `
@@ -1824,6 +1893,10 @@ def _get_dashboard_html() -> str:
           <div class="chart-legend" id="chart-leg-${idx}"></div>
         `;
         grid.appendChild(box);
+        return { box, grp, idx };
+      });
+
+      boxes.forEach(({ box, grp, idx }) => {
         drawSingleChart(box, `chart-svg-${idx}`, `chart-tip-${idx}`, `chart-leg-${idx}`, runs, grp.metrics);
       });
     }
@@ -1863,7 +1936,7 @@ def _get_dashboard_html() -> str:
       const width = Math.max(300, Math.round(rect.width || 420));
       const height = 240;
       svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-      svg.setAttribute("preserveAspectRatio", "none");
+      svg.removeAttribute("preserveAspectRatio");
       const padL = 54, padR = 20, padT = 18, padB = 32;
 
       const transformY = v => (scaleMode === "log" ? Math.log10(v) : v);
@@ -1939,7 +2012,11 @@ def _get_dashboard_html() -> str:
         `;
       });
 
-      svg.innerHTML = gridSvg + linesSvg;
+      const clipId = `clip-${svgId}`;
+      const plotW = Math.max(1, width - padL - padR);
+      const plotH = Math.max(1, height - padT - padB);
+      const defsSvg = `<defs><clipPath id="${clipId}"><rect x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" /></clipPath></defs>`;
+      svg.innerHTML = `${defsSvg}${gridSvg}<g clip-path="url(#${clipId})">${linesSvg}</g>`;
       legend.innerHTML = legendHtml;
 
       svg.onmousemove = (e) => {
@@ -2015,30 +2092,56 @@ def _get_dashboard_html() -> str:
         ...Array.from(allMetrics).filter(m => !metricOrder.includes(m)).sort()
       ].slice(0, 4);
 
+      const isLowerBetter = m => /loss|err|mae|mse|rmse|perplexity/i.test(m);
+      const bestPerMetric = {};
+      displayMetrics.forEach(m => {
+        const vals = runs
+          .map(x => {
+            const pts = (x.data.metrics && x.data.metrics[m]) || [];
+            return pts.length > 0 ? Number(pts[pts.length - 1].value) : null;
+          })
+          .filter(v => v !== null && !Number.isNaN(v));
+        if (vals.length > 0) {
+          bestPerMetric[m] = isLowerBetter(m) ? Math.min(...vals) : Math.max(...vals);
+        }
+      });
+
       const rowsHtml = runs.map(({ key, idx, data }) => {
         const color = PALETTE[idx % PALETTE.length];
-        const meta = data.meta || {};
-        const modelInfo = (data.params && data.params.model) ? data.params.model : {};
-        const modelName = modelInfo.family ? `${modelInfo.family}@${modelInfo.version || "1.0.0"}` : "—";
-        const status = (meta.status || "UNKNOWN").toUpperCase();
-        const badgeCls = status === "COMPLETED" ? "badge-completed" : status === "FAILED" ? "badge-failed" : "badge-running";
-        const bestText = (meta.best_metric_value !== null && meta.best_metric_value !== undefined)
-          ? `${escapeHtml(meta.best_metric_name || "best")}: <strong>${Number(meta.best_metric_value).toFixed(4)}</strong>`
+        const params = data.params || {};
+        const metrics = data.metrics || {};
+        const modelInfo = params.model || {};
+        const modelName = modelInfo.family ? `${modelInfo.family}${modelInfo.version ? `@${modelInfo.version}` : ""}` : "—";
+        const status = String(data.status || "unknown").toLowerCase();
+
+        const monitorKey = (params.training && params.training.monitor) || (metrics.val_loss ? "val_loss" : (metrics.train_loss ? "train_loss" : Object.keys(metrics)[0]));
+        const monSeries = monitorKey ? (metrics[monitorKey] || []) : [];
+        const monMode = (params.training && params.training.monitor_mode) || (monitorKey && isLowerBetter(monitorKey) ? "min" : "max");
+        const bestMonVal = monSeries.length > 0
+          ? (monMode === "max" ? Math.max(...monSeries.map(p => Number(p.value))) : Math.min(...monSeries.map(p => Number(p.value))))
+          : null;
+        const bestText = bestMonVal !== null
+          ? `${escapeHtml(monitorKey)}: <strong>${bestMonVal.toFixed(4)}</strong>`
           : "—";
+
         const metricCells = displayMetrics.map(m => {
-          const pts = (data.metrics && data.metrics[m]) || [];
+          const pts = metrics[m] || [];
           if (pts.length === 0) return `<td style="color:var(--text-dim);">—</td>`;
-          const last = pts[pts.length - 1].value;
-          return `<td style="font-variant-numeric:tabular-nums;">${Number(last).toFixed(4)}</td>`;
+          const last = Number(pts[pts.length - 1].value);
+          const isWinner = bestPerMetric[m] !== undefined && Math.abs(last - bestPerMetric[m]) < 1e-12;
+          return `<td style="font-variant-numeric:tabular-nums; ${isWinner ? "color:var(--ok); font-weight:700;" : ""}">${last.toFixed(4)}</td>`;
         }).join("");
-        const maxStep = Math.max(0, ...Object.values(data.metrics || {}).flat().map(p => p.step));
-        const epochDisplay = `${meta.epoch !== undefined && meta.epoch !== null ? meta.epoch : 0} / ${maxStep}`;
+
+        const maxStep = Object.values(metrics).reduce((acc, arr) => Math.max(acc, ...(arr.map(p => p.step))), 0);
+        const totalEpochsCfg = params.training && params.training.epochs ? params.training.epochs : null;
+        const epochDisplay = totalEpochsCfg ? `${maxStep} / ${totalEpochsCfg}` : `${maxStep}`;
         const activeTag = key === `${activeExp}:${activeRun}` ? ' <span class="brand-ver" style="font-size:0.65rem;">ACTIVE</span>' : "";
+
         return `
           <tr>
             <td><span class="legend-dot" style="background:${color}; display:inline-block; margin-right:6px;"></span><strong>${escapeHtml(data.run_name)}</strong>${activeTag}</td>
             <td>${escapeHtml(modelName)}</td>
-            <td><span class="status-badge ${badgeCls}">${escapeHtml(status)}</span></td>
+            <td><span class="status-pill ${escapeHtml(status)}">${escapeHtml(status)}</span></td>
             <td>${bestText}</td>
             ${metricCells}
             <td>${escapeHtml(epochDisplay)}</td>
@@ -2048,11 +2151,12 @@ def _get_dashboard_html() -> str:
       }).join("");
 
       container.innerHTML = `
-        <div class="section-head" style="margin-top:4px; margin-bottom:8px;">
+        <div class="section-header" style="margin-top:4px;">
           <div class="section-title">Model &amp; Run Comparison (${runs.length} selected)</div>
+          <button class="btn" style="padding:2px 8px; font-size:0.74rem;" onclick="clearComparison()">Exit Compare</button>
         </div>
-        <div class="table-wrap" style="margin-bottom:18px;">
-          <table>
+        <div class="card" style="padding:0; overflow-x:auto; margin-bottom:16px;">
+          <table class="data-table">
             <thead>
               <tr>
                 <th>Run</th>
@@ -2237,6 +2341,7 @@ def _get_dashboard_html() -> str:
         const sig = JSON.stringify(data);
         const listEl = document.getElementById("bundles-list");
         const bundles = data.bundles || [];
+        discoveredBundles = bundles;
         document.getElementById("bundle-count").textContent = `(${bundles.length})`;
 
         if (!force && sig === lastBundlesSignature) return;
@@ -2294,15 +2399,30 @@ def _get_dashboard_html() -> str:
 
     function updateBundleCompareBar() {
       const bar = document.getElementById("bundles-compare-bar");
-      const btn = document.getElementById("bundles-compare-btn");
-      if (!bar || !btn) return;
-      if (selectedBundles.size > 0) {
-        bar.style.display = "flex";
-        btn.textContent = `Compare (${selectedBundles.size})`;
-        btn.disabled = selectedBundles.size < 2;
-      } else {
+      if (!bar) return;
+      if (discoveredBundles.length < 2) {
         bar.style.display = "none";
+        return;
       }
+      bar.style.display = "flex";
+      if (selectedBundles.size >= 2) {
+        bar.innerHTML = `
+          <button class="btn active-toggle" id="bundles-compare-btn" style="padding:2px 8px; font-size:0.72rem;" onclick="compareBundles()">Compare (${selectedBundles.size})</button>
+          <button class="btn" style="padding:2px 6px; font-size:0.72rem;" onclick="clearBundleSelection()">Clear</button>
+        `;
+      } else {
+        bar.innerHTML = `
+          <button class="btn" id="bundles-compare-btn" style="padding:2px 8px; font-size:0.72rem;" onclick="compareAllBundles()">Compare All (${discoveredBundles.length})</button>
+        `;
+      }
+    }
+
+    function compareAllBundles() {
+      if (discoveredBundles.length < 2) return;
+      selectedBundles = new Set(discoveredBundles.map(b => b.path));
+      document.querySelectorAll("#bundles-list input[type='checkbox']").forEach(chk => { chk.checked = true; });
+      updateBundleCompareBar();
+      compareBundles();
     }
 
     function toggleBundleSelection(bundlePath, isChecked) {
