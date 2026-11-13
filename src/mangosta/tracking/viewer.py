@@ -1007,7 +1007,7 @@ def _get_dashboard_html() -> str:
     /* Charts Grid */
     .charts-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
       gap: 14px;
       margin-bottom: 22px;
     }
@@ -1017,6 +1017,8 @@ def _get_dashboard_html() -> str:
       border-radius: 6px;
       padding: 14px 16px;
       position: relative;
+      min-width: 0;
+      overflow: hidden;
     }
     .chart-box-head {
       display: flex;
@@ -1031,7 +1033,7 @@ def _get_dashboard_html() -> str:
       background: var(--bg);
       border: 1px solid var(--border);
       border-radius: 4px;
-      overflow: visible;
+      overflow: hidden;
       display: block;
     }
     .chart-tooltip {
@@ -1284,6 +1286,7 @@ def _get_dashboard_html() -> str:
       <div id="tab-metrics" class="view-panel active">
         <div id="metrics-top-meta" class="grid-metrics"></div>
         <div id="metrics-provenance"></div>
+        <div id="metrics-compare-summary"></div>
 
         <div class="toolbar">
           <div class="control-row">
@@ -1350,7 +1353,13 @@ def _get_dashboard_html() -> str:
       <div id="tab-bundles" class="view-panel">
         <div class="val-container">
           <div class="val-sidebar" style="width:290px;">
-            <div class="section-title" style="font-size:0.82rem; margin-bottom:8px;">Discovered Bundles</div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <div class="section-title" style="font-size:0.82rem; margin:0;">Discovered Bundles</div>
+              <div id="bundles-compare-bar" style="display:none; align-items:center; gap:6px;">
+                <button class="btn" id="bundles-compare-btn" style="padding:2px 8px; font-size:0.72rem;" onclick="compareBundles()">Compare (0)</button>
+                <button class="btn" style="padding:2px 6px; font-size:0.72rem;" onclick="clearBundleSelection()">Clear</button>
+              </div>
+            </div>
             <div id="bundles-list">Scanning workspace...</div>
           </div>
 
@@ -1404,6 +1413,8 @@ def _get_dashboard_html() -> str:
     let lastBundlesSignature = "";
     let activeBundlePath = null;
     let currentBundleData = null;
+    let selectedBundles = new Set();
+    let loadedBundlesCache = {};
 
     // Validation Scrubber State
     let currentSampleId = null;
@@ -1725,6 +1736,7 @@ def _get_dashboard_html() -> str:
       });
       select.value = Array.from(select.options).some(o => o.value === prevVal) ? prevVal : "__ALL_PAIRED__";
 
+      renderRunComparisonTable();
       renderCharts();
       renderParamDiffTable();
     }
@@ -1847,8 +1859,11 @@ def _get_dashboard_html() -> str:
         return;
       }
 
-      const width = svg.clientWidth || 460;
+      const rect = svg.getBoundingClientRect();
+      const width = Math.max(300, Math.round(rect.width || 420));
       const height = 240;
+      svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+      svg.setAttribute("preserveAspectRatio", "none");
       const padL = 54, padR = 20, padT = 18, padB = 32;
 
       const transformY = v => (scaleMode === "log" ? Math.log10(v) : v);
@@ -1930,7 +1945,8 @@ def _get_dashboard_html() -> str:
       svg.onmousemove = (e) => {
         const svgRect = svg.getBoundingClientRect();
         const boxRect = box.getBoundingClientRect();
-        const mouseX = e.clientX - svgRect.left;
+        const scaleX = svgRect.width > 0 ? (width / svgRect.width) : 1;
+        const mouseX = (e.clientX - svgRect.left) * scaleX;
         if (mouseX < padL || mouseX > width - padR) return;
 
         const targetStep = minS === maxS
@@ -1980,6 +1996,78 @@ def _get_dashboard_html() -> str:
         }
       });
       return out;
+    }
+
+    function renderRunComparisonTable() {
+      const container = document.getElementById("metrics-compare-summary");
+      const runKeys = Array.from(selectedRuns);
+      const runs = runKeys.map((k, idx) => ({ key: k, idx, data: loadedRunsData[k] })).filter(x => Boolean(x.data));
+      if (runs.length < 2) {
+        container.innerHTML = "";
+        return;
+      }
+
+      const metricOrder = ["val_loss", "val_acc", "train_loss", "loss", "acc"];
+      const allMetrics = new Set();
+      runs.forEach(x => Object.keys(x.data.metrics || {}).forEach(m => allMetrics.add(m)));
+      const displayMetrics = [
+        ...metricOrder.filter(m => allMetrics.has(m)),
+        ...Array.from(allMetrics).filter(m => !metricOrder.includes(m)).sort()
+      ].slice(0, 4);
+
+      const rowsHtml = runs.map(({ key, idx, data }) => {
+        const color = PALETTE[idx % PALETTE.length];
+        const meta = data.meta || {};
+        const modelInfo = (data.params && data.params.model) ? data.params.model : {};
+        const modelName = modelInfo.family ? `${modelInfo.family}@${modelInfo.version || "1.0.0"}` : "—";
+        const status = (meta.status || "UNKNOWN").toUpperCase();
+        const badgeCls = status === "COMPLETED" ? "badge-completed" : status === "FAILED" ? "badge-failed" : "badge-running";
+        const bestText = (meta.best_metric_value !== null && meta.best_metric_value !== undefined)
+          ? `${escapeHtml(meta.best_metric_name || "best")}: <strong>${Number(meta.best_metric_value).toFixed(4)}</strong>`
+          : "—";
+        const metricCells = displayMetrics.map(m => {
+          const pts = (data.metrics && data.metrics[m]) || [];
+          if (pts.length === 0) return `<td style="color:var(--text-dim);">—</td>`;
+          const last = pts[pts.length - 1].value;
+          return `<td style="font-variant-numeric:tabular-nums;">${Number(last).toFixed(4)}</td>`;
+        }).join("");
+        const maxStep = Math.max(0, ...Object.values(data.metrics || {}).flat().map(p => p.step));
+        const epochDisplay = `${meta.epoch !== undefined && meta.epoch !== null ? meta.epoch : 0} / ${maxStep}`;
+        const activeTag = key === `${activeExp}:${activeRun}` ? ' <span class="brand-ver" style="font-size:0.65rem;">ACTIVE</span>' : "";
+        return `
+          <tr>
+            <td><span class="legend-dot" style="background:${color}; display:inline-block; margin-right:6px;"></span><strong>${escapeHtml(data.run_name)}</strong>${activeTag}</td>
+            <td>${escapeHtml(modelName)}</td>
+            <td><span class="status-badge ${badgeCls}">${escapeHtml(status)}</span></td>
+            <td>${bestText}</td>
+            ${metricCells}
+            <td>${escapeHtml(epochDisplay)}</td>
+            <td>${escapeHtml(formatDuration(data.duration_seconds))}</td>
+          </tr>
+        `;
+      }).join("");
+
+      container.innerHTML = `
+        <div class="section-head" style="margin-top:4px; margin-bottom:8px;">
+          <div class="section-title">Model &amp; Run Comparison (${runs.length} selected)</div>
+        </div>
+        <div class="table-wrap" style="margin-bottom:18px;">
+          <table>
+            <thead>
+              <tr>
+                <th>Run</th>
+                <th>Model</th>
+                <th>Status</th>
+                <th>Best Monitored</th>
+                ${displayMetrics.map(m => `<th>Last ${escapeHtml(m)}</th>`).join("")}
+                <th>Epoch / Step</th>
+                <th>Duration</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>
+      `;
     }
 
     function renderParamDiffTable() {
@@ -2163,15 +2251,22 @@ def _get_dashboard_html() -> str:
         if (!activeBundlePath || !bundles.some(b => b.path === activeBundlePath)) {
           activeBundlePath = bundles[0].path;
         }
+        const validPaths = new Set(bundles.map(b => b.path));
+        selectedBundles.forEach(p => { if (!validPaths.has(p)) selectedBundles.delete(p); });
+        updateBundleCompareBar();
 
         bundles.forEach(b => {
           const item = document.createElement("div");
           item.className = `val-sample-item ${b.path === activeBundlePath ? "active" : ""}`;
           const roleBadge = b.format === "onnx" ? "ONNX" : (b.is_checkpoint ? "CKPT" : "INFER");
+          const isChecked = selectedBundles.has(b.path);
           item.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:center; gap:6px;">
-              <span style="font-weight:700; font-family:var(--font-mono); font-size:0.79rem; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(b.filename)}</span>
-              <span class="brand-ver" style="font-size:0.65rem;">${roleBadge}</span>
+              <label style="display:flex; align-items:center; gap:6px; min-width:0; cursor:pointer; flex:1;" onclick="event.stopPropagation()">
+                <input type="checkbox" ${isChecked ? "checked" : ""} onchange="toggleBundleSelection(decodeURIComponent('${encodeURIComponent(b.path)}'), this.checked)" />
+                <span style="font-weight:700; font-family:var(--font-mono); font-size:0.79rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(b.filename)}</span>
+              </label>
+              <span class="brand-ver" style="font-size:0.65rem; flex-shrink:0;">${roleBadge}</span>
             </div>
             <div style="color:var(--text-dim); font-family:var(--font-mono); font-size:0.7rem; margin-top:4px; display:flex; justify-content:space-between;">
               <span>${escapeHtml(b.family)} v${escapeHtml(b.version)}</span>
@@ -2187,9 +2282,165 @@ def _get_dashboard_html() -> str:
           listEl.appendChild(item);
         });
 
-        inspectBundle(activeBundlePath);
+        if (selectedBundles.size >= 2) {
+          compareBundles();
+        } else {
+          inspectBundle(activeBundlePath);
+        }
       } catch (e) {
         console.error("Error fetching bundles:", e);
+      }
+    }
+
+    function updateBundleCompareBar() {
+      const bar = document.getElementById("bundles-compare-bar");
+      const btn = document.getElementById("bundles-compare-btn");
+      if (!bar || !btn) return;
+      if (selectedBundles.size > 0) {
+        bar.style.display = "flex";
+        btn.textContent = `Compare (${selectedBundles.size})`;
+        btn.disabled = selectedBundles.size < 2;
+      } else {
+        bar.style.display = "none";
+      }
+    }
+
+    function toggleBundleSelection(bundlePath, isChecked) {
+      if (isChecked) selectedBundles.add(bundlePath);
+      else selectedBundles.delete(bundlePath);
+      updateBundleCompareBar();
+      if (selectedBundles.size >= 2) {
+        compareBundles();
+      } else if (activeBundlePath) {
+        inspectBundle(activeBundlePath);
+      }
+    }
+
+    function clearBundleSelection() {
+      selectedBundles.clear();
+      document.querySelectorAll("#bundles-list input[type='checkbox']").forEach(chk => { chk.checked = false; });
+      updateBundleCompareBar();
+      if (activeBundlePath) inspectBundle(activeBundlePath);
+    }
+
+    async function loadBundleData(bundlePath) {
+      if (loadedBundlesCache[bundlePath]) return loadedBundlesCache[bundlePath];
+      const res = await fetch(`/api/bundle?path=${encodeURIComponent(bundlePath)}`);
+      const b = await res.json();
+      loadedBundlesCache[bundlePath] = b;
+      return b;
+    }
+
+    async function compareBundles() {
+      const paths = Array.from(selectedBundles);
+      if (paths.length < 2) {
+        if (activeBundlePath) inspectBundle(activeBundlePath);
+        return;
+      }
+      const main = document.getElementById("bundle-inspector-main");
+      main.innerHTML = "<div class='empty-state'>Comparing selected bundles...</div>";
+
+      try {
+        const bundles = await Promise.all(paths.map(p => loadBundleData(p)));
+        const headerCols = bundles.map(b => `<th>${escapeHtml(b.file)}</th>`).join("");
+
+        const specRows = [
+          ["Family & Version", b => `${b.family || "—"} v${b.version || "—"}`],
+          ["Format / Role", b => `${(b.format || "safetensors").toUpperCase()} · ${b.is_checkpoint ? "CHECKPOINT" : "INFERENCE"}`],
+          ["File Size", b => formatBytes(b.size_bytes)],
+          ["Total Params", b => (b.total_params || 0).toLocaleString()],
+          ["Layers", b => String(b.tensors ? b.tensors.length : 0)],
+          ["Epoch / Step", b => `${b.epoch ?? "N/A"} / ${b.step ?? "N/A"}`],
+          ["Weights SHA-256", b => `${(b.weights_sha256 || "N/A").slice(0, 16)}...`]
+        ];
+        const specHtml = specRows.map(([label, getter]) => {
+          const vals = bundles.map(getter);
+          const isDiff = vals.some(v => v !== vals[0]);
+          return `<tr class="${isDiff ? "divergent" : ""}"><td><strong>${escapeHtml(label)}</strong></td>${vals.map(v => `<td>${escapeHtml(v)}</td>`).join("")}</tr>`;
+        }).join("");
+
+        const allMetricKeys = new Set();
+        bundles.forEach(b => Object.keys(b.metrics || {}).forEach(k => allMetricKeys.add(k)));
+        const metricRowsHtml = Array.from(allMetricKeys).sort().map(k => {
+          const vals = bundles.map(b => (b.metrics && b.metrics[k] !== undefined) ? b.metrics[k] : null);
+          const isDiff = vals.some(v => JSON.stringify(v) !== JSON.stringify(vals[0]));
+          return `<tr class="${isDiff ? "divergent" : ""}"><td>${escapeHtml(k)}</td>${vals.map(v => `<td>${v === null ? '<span style="color:var(--text-dim);">—</span>' : (typeof v === "number" ? v.toFixed(6) : escapeHtml(v))}</td>`).join("")}</tr>`;
+        }).join("");
+
+        const schemaNodes = new Set();
+        const schemaLookup = bundles.map(b => {
+          const map = {};
+          const inputs = (b.schema && b.schema.inputs) || [];
+          const outputs = (b.schema && b.schema.outputs) || [];
+          inputs.forEach(i => { const k = `input:${i.name}`; schemaNodes.add(k); map[k] = `[${(i.shape || []).map(d => d === null ? "dyn" : d).join(", ")}] · ${i.dtype}`; });
+          outputs.forEach(o => { const k = `output:${o.name}`; schemaNodes.add(k); map[k] = `[${(o.shape || []).map(d => d === null ? "dyn" : d).join(", ")}] · ${o.dtype}`; });
+          return map;
+        });
+        const schemaRowsHtml = Array.from(schemaNodes).sort().map(node => {
+          const vals = schemaLookup.map(m => m[node] || null);
+          const isDiff = vals.some(v => v !== vals[0]);
+          return `<tr class="${isDiff ? "divergent" : ""}"><td>${escapeHtml(node)}</td>${vals.map(v => `<td>${v ? escapeHtml(v) : '<span style="color:var(--text-dim);">—</span>'}</td>`).join("")}</tr>`;
+        }).join("");
+
+        const allLayerNames = new Set();
+        const layerLookup = bundles.map(b => {
+          const map = {};
+          (b.tensors || []).forEach(t => { allLayerNames.add(t.name); map[t.name] = t; });
+          return map;
+        });
+        const layerRowsHtml = Array.from(allLayerNames).sort().map(name => {
+          const vals = layerLookup.map(m => m[name] ? `[${(m[name].shape || []).join(", ")}] · ${m[name].dtype} · ${(m[name].param_count || 0).toLocaleString()}` : null);
+          const isDiff = vals.some(v => v !== vals[0]);
+          return `<tr class="${isDiff ? "divergent" : ""}"><td>${escapeHtml(name)}</td>${vals.map(v => `<td>${v ? escapeHtml(v) : '<span style="color:var(--text-dim);">missing</span>'}</td>`).join("")}</tr>`;
+        }).join("");
+
+        main.innerHTML = `
+          <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:12px;">
+              <div>
+                <h2 style="font-size:1.05rem; font-family:var(--font-mono);">Model &amp; Bundle Comparison (${bundles.length} selected)</h2>
+                <div style="color:var(--text-muted); font-size:0.78rem; margin-top:3px;">Rows highlighted in indigo indicate differences across compared bundles.</div>
+              </div>
+              <button class="btn" onclick="clearBundleSelection()">Back to Single Inspector</button>
+            </div>
+          </div>
+
+          <div class="card" style="padding:0; overflow:hidden;">
+            <div class="section-header" style="padding:10px 14px; margin:0;"><div class="section-title" style="font-size:0.84rem;">Architecture &amp; Metadata</div></div>
+            <div style="overflow-x:auto;">
+              <table class="data-table"><thead><tr><th>Property</th>${headerCols}</tr></thead><tbody>${specHtml}</tbody></table>
+            </div>
+          </div>
+
+          ${allMetricKeys.size > 0 ? `
+            <div class="card" style="padding:0; overflow:hidden;">
+              <div class="section-header" style="padding:10px 14px; margin:0;"><div class="section-title" style="font-size:0.84rem;">Recorded Metrics Comparison</div></div>
+              <div style="overflow-x:auto;">
+                <table class="data-table"><thead><tr><th>Metric</th>${headerCols}</tr></thead><tbody>${metricRowsHtml}</tbody></table>
+              </div>
+            </div>
+          ` : ""}
+
+          ${schemaNodes.size > 0 ? `
+            <div class="card" style="padding:0; overflow:hidden;">
+              <div class="section-header" style="padding:10px 14px; margin:0;"><div class="section-title" style="font-size:0.84rem;">ModelSchema Contract Diff</div></div>
+              <div style="overflow-x:auto;">
+                <table class="data-table"><thead><tr><th>Contract Node</th>${headerCols}</tr></thead><tbody>${schemaRowsHtml}</tbody></table>
+              </div>
+            </div>
+          ` : ""}
+
+          ${allLayerNames.size > 0 ? `
+            <div class="card" style="padding:0; overflow:hidden;">
+              <div class="section-header" style="padding:10px 14px; margin:0;"><div class="section-title" style="font-size:0.84rem;">SafeTensors Layer Diff (${allLayerNames.size} layers)</div></div>
+              <div style="max-height:320px; overflow:auto;">
+                <table class="data-table"><thead><tr><th>Layer Tensor</th>${headerCols}</tr></thead><tbody>${layerRowsHtml}</tbody></table>
+              </div>
+            </div>
+          ` : ""}
+        `;
+      } catch (e) {
+        main.innerHTML = `<div class='empty-state'>Error comparing bundles: ${escapeHtml(e.message)}</div>`;
       }
     }
 
@@ -2198,8 +2449,7 @@ def _get_dashboard_html() -> str:
       main.innerHTML = "<div class='empty-state'>Inspecting bundle headers...</div>";
 
       try {
-        const res = await fetch(`/api/bundle?path=${encodeURIComponent(bundlePath)}`);
-        const b = await res.json();
+        const b = await loadBundleData(bundlePath);
         currentBundleData = b;
 
         const metricEntries = Object.entries(b.metrics || {});
