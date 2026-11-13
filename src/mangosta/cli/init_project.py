@@ -249,18 +249,18 @@ if __name__ == "__main__":
     (dest / "entrypoints" / "benchmark.py").write_text(benchmark_code, encoding="utf-8")
 
 
-def _write_meta(dest: Path) -> None:
-    project_slug = dest.name.replace(" ", "_").replace("-", "_")
-
-    # pyproject.toml
-    pyproject_content = f"""[project]
+def _ensure_pyproject(dest: Path, project_slug: str) -> None:
+    """Create pyproject.toml if missing, or safely append missing script/build sections if present."""
+    pyproject_path = dest / "pyproject.toml"
+    if not pyproject_path.exists():
+        pyproject_content = f"""[project]
 name = "{project_slug}"
 version = "0.1.0"
 description = "PyTorch project powered by Mangosta"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "mangosta",
+    "mangosta[all]",
     "torch>=2.0.0",
     "pyyaml>=6.0",
     "numpy>=2.0.0",
@@ -278,7 +278,34 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src", "entrypoints"]
 """
-    (dest / "pyproject.toml").write_text(pyproject_content, encoding="utf-8")
+        pyproject_path.write_text(pyproject_content, encoding="utf-8")
+        return
+
+    # Preserve existing pyproject.toml (especially [tool.uv.sources] and dependencies!)
+    existing = pyproject_path.read_text(encoding="utf-8")
+    additions: list[str] = []
+
+    if "[project.scripts]" not in existing:
+        additions.append(
+            '\n[project.scripts]\ntrain = "entrypoints.train:main"\n'
+            'infer = "entrypoints.infer:main"\nbenchmark = "entrypoints.benchmark:main"\n'
+        )
+    if "[build-system]" not in existing:
+        additions.append(
+            '\n[build-system]\nrequires = ["hatchling"]\nbuild-backend = "hatchling.build"\n'
+        )
+    if "[tool.hatch.build.targets.wheel]" not in existing:
+        additions.append('\n[tool.hatch.build.targets.wheel]\npackages = ["src", "entrypoints"]\n')
+
+    if additions:
+        pyproject_path.write_text(existing.rstrip() + "\n" + "".join(additions), encoding="utf-8")
+
+
+def _write_meta(dest: Path) -> None:
+    project_slug = dest.name.replace(" ", "_").replace("-", "_")
+
+    # pyproject.toml (preserves existing [tool.uv.sources] / editable dependencies)
+    _ensure_pyproject(dest, project_slug)
 
     # .agents/skills/mangosta/SKILL.md
     # Load canonical skill from packaged data or repository source
