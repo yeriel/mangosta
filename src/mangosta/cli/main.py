@@ -1,232 +1,304 @@
-"""Command line interface for mangosta: inspect, report, and ephemeral viewing."""
+"""Command line interface for mangosta: init, inspect, view, and export-onnx."""
 
 from __future__ import annotations
 
 import argparse
+import importlib
+import importlib.metadata
 import json
 import shutil
-import struct
 import subprocess
 import sys
-import zipfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
-from mangosta.artifacts.bundle import read_bundle_manifest
+from mangosta.artifacts.bundle import inspect_bundle_metadata
 from mangosta.cli.init_project import init_project
-from mangosta.tracking.report import generate_report
 from mangosta.tracking.viewer import start_viewer
 
 
-def _parse_safetensors_header(header_bytes: bytes) -> dict[str, Any]:
-    """Parse SafeTensors metadata header without importing PyTorch or third-party packages.
-
-    SafeTensors format layout:
-    - 8 bytes: unsigned 64-bit little-endian integer N (header length in bytes)
-    - N bytes: UTF-8 encoded JSON object containing tensor shapes, dtypes, data_offsets,
-      and optional __metadata__ dict.
-    """
-    if len(header_bytes) < 8:
-        return {}
-    header_len = struct.unpack("<Q", header_bytes[:8])[0]
-    if len(header_bytes) < 8 + header_len:
-        return {}
-    json_bytes = header_bytes[8 : 8 + header_len]
+def _get_version() -> str:
+    """Return installed mangosta version cleanly."""
     try:
-        parsed = json.loads(json_bytes.decode("utf-8"))
-        return dict(parsed) if isinstance(parsed, dict) else {}
+        return importlib.metadata.version("mangosta")
     except Exception:
-        return {}
+        return "0.4.0"
 
 
-def inspect_bundle(bundle_path: str, as_json: bool = False) -> None:
-    """Print formatted summary of a .bundle file to terminal or stdout as machine-readable JSON."""
-    path = Path(bundle_path).resolve()
-    if not path.is_file():
-        if as_json:
-            print(json.dumps({"error": f"Bundle file '{bundle_path}' not found."}, indent=2), file=sys.stderr)
-        else:
-            print(f"Error: Bundle file '{bundle_path}' not found.", file=sys.stderr)
-        sys.exit(1)
+def _format_schema_nodes(nodes: Any) -> str:
+    """Render schema input/output node specifications concisely."""
+    if isinstance(nodes, list):
+        parts = [
+            f"{item.get('name', idx)}: {item.get('shape')} ({item.get('dtype')})"
+            for idx, item in enumerate(nodes)
+            if isinstance(item, dict)
+        ]
+        return "; ".join(parts) if parts else "none"
+    if isinstance(nodes, dict):
+        parts = [
+            f"{k}: {v.get('shape')} ({v.get('dtype')})"
+            for k, v in nodes.items()
+            if isinstance(v, dict)
+        ]
+        return "; ".join(parts) if parts else "none"
+    return "none"
 
-    try:
-        manifest = read_bundle_manifest(path)
-    except Exception as e:
-        if as_json:
-            print(json.dumps({"error": f"Error reading bundle: {e}"}, indent=2), file=sys.stderr)
-        else:
-            print(f"Error reading bundle: {e}", file=sys.stderr)
-        sys.exit(1)
 
-    # Inspect zip contents, weights format, layers and hashes
-    format_type = manifest.get("weights_format", "unknown")
-    files_in_zip: list[str] = []
-    weights_size_bytes = 0
-    tensors_info: list[dict[str, Any]] = []
+def _build_inspect_payload(info: dict[str, Any]) -> dict[str, Any]:
+    """Normalize metadata payload for machine-readable JSON inspection."""
+    tensors = info.get("tensors") or []
+    return {
+        "file": {
+            "name": info["file"],
+            "path": info["path"],
+            "size_bytes": info["size_bytes"],
+        },
+        "family": info.get("family"),
+        "version": info.get("version"),
+        "format": info.get("format"),
+        "weights_size_bytes": info.get("weights_size_bytes", 0),
+        "weights_sha256": info.get("weights_sha256"),
+        "is_checkpoint": info.get("is_checkpoint", False),
+        "epoch": info.get("epoch"),
+        "step": info.get("step"),
+        "dataset_hash": info.get("dataset_hash"),
+        "created_at": info.get("created_at"),
+        "total_params": info.get("total_params", 0),
+        "schema": info.get("schema"),
+        "metrics": info.get("metrics", {}),
+        "init_args": info.get("init_args", {}),
+        "metadata": info.get("metadata", {}),
+        "config": info.get("config"),
+        "files": info.get("files", []),
+        "tensors": tensors if info.get("format") == "safetensors" else None,
+    }
 
-    try:
-        with zipfile.ZipFile(path, "r") as zf:
-            namelist = zf.namelist()
-            files_in_zip = [n for n in namelist if not n.endswith("/")]
 
-            if "model.safetensors" in namelist:
-                format_type = "safetensors"
-                weights_size_bytes = zf.getinfo("model.safetensors").file_size
+def _build_diff_payload(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
+    """Compare two inspected bundle metadata dicts cleanly."""
+    fields = [
+        "family",
+        "version",
+        "format",
+        "size_bytes",
+        "weights_size_bytes",
+        "total_params",
+        "is_checkpoint",
+        "epoch",
+        "step",
+        "weights_sha256",
+        "dataset_hash",
+    ]
+    summary_diff = {
+        f: {"left": left.get(f), "right": right.get(f), "changed": left.get(f) != right.get(f)}
+        for f in fields
+    }
 
-                # Fast zero-torch read of SafeTensors header
-                with zf.open("model.safetensors", "r") as sf:
-                    # Read first 8 bytes for length, then read header JSON
-                    header_len_bytes = sf.read(8)
-                    if len(header_len_bytes) == 8:
-                        header_len = struct.unpack("<Q", header_len_bytes)[0]
-                        header_json_bytes = sf.read(header_len)
-                        raw_header = json.loads(header_json_bytes.decode("utf-8"))
-                        for tensor_name, info in raw_header.items():
-                            if tensor_name == "__metadata__":
-                                continue
-                            if isinstance(info, dict):
-                                tensors_info.append(
-                                    {
-                                        "name": tensor_name,
-                                        "shape": info.get("shape", []),
-                                        "dtype": info.get("dtype", "unknown"),
-                                    }
-                                )
-            elif "model.onnx" in namelist:
-                format_type = "onnx"
-                weights_size_bytes = zf.getinfo("model.onnx").file_size
-    except Exception:
-        pass
-
-    model_sha = manifest.get("model_sha256") or manifest.get("weights_sha256")
-
-    # Machine-readable JSON output
-    if as_json:
-        payload = {
-            "file": {
-                "name": path.name,
-                "path": str(path),
-                "size_bytes": path.stat().st_size,
-            },
-            "family": manifest.get("family"),
-            "version": manifest.get("version"),
-            "format": format_type,
-            "weights_size_bytes": weights_size_bytes,
-            "weights_sha256": model_sha,
-            "is_checkpoint": manifest.get("is_checkpoint", False),
-            "epoch": manifest.get("epoch"),
-            "step": manifest.get("step"),
-            "dataset_hash": manifest.get("dataset_hash"),
-            "created_at": manifest.get("created_at"),
-            "schema": manifest.get("schema"),
-            "metrics": manifest.get("metrics", {}),
-            "init_args": manifest.get("init_args", {}),
-            "metadata": manifest.get("metadata", {}),
-            "files": files_in_zip,
-            "tensors": tensors_info if format_type == "safetensors" else None,
+    left_metrics = left.get("metrics") or {}
+    right_metrics = right.get("metrics") or {}
+    metric_keys = sorted(set(left_metrics) | set(right_metrics))
+    metrics_diff = {
+        k: {
+            "left": left_metrics.get(k),
+            "right": right_metrics.get(k),
+            "changed": left_metrics.get(k) != right_metrics.get(k),
         }
-        print(json.dumps(payload, indent=2))
-        return
+        for k in metric_keys
+    }
 
-    # Human-readable formatted text output
+    left_tensors = {t["name"]: t for t in (left.get("tensors") or [])}
+    right_tensors = {t["name"]: t for t in (right.get("tensors") or [])}
+    layer_names = sorted(set(left_tensors) | set(right_tensors))
+    changed_layers: list[dict[str, Any]] = []
+    for name in layer_names:
+        lt = left_tensors.get(name)
+        rt = right_tensors.get(name)
+        l_spec = f"{lt.get('shape')} {lt.get('dtype')}" if lt else None
+        r_spec = f"{rt.get('shape')} {rt.get('dtype')}" if rt else None
+        if l_spec != r_spec:
+            changed_layers.append({"name": name, "left": l_spec, "right": r_spec})
+
+    return {
+        "left": left["file"],
+        "right": right["file"],
+        "summary": summary_diff,
+        "metrics": metrics_diff,
+        "schema_changed": left.get("schema") != right.get("schema"),
+        "changed_layers": changed_layers,
+        "total_layers": {"left": len(left_tensors), "right": len(right_tensors)},
+    }
+
+
+def _print_bundle_text(info: dict[str, Any], show_config: bool = False) -> None:
+    """Print human-readable bundle summary to stdout."""
+    format_type = info.get("format", "unknown")
+    weights_mb = (info.get("weights_size_bytes") or 0) / (1024 * 1024)
+    tensors = info.get("tensors") or []
+
     print("\n" + "=" * 60)
     print("MANGOSTA BUNDLE INSPECTOR")
     print("=" * 60)
-    print(f"File:           {path.name} ({path.stat().st_size / 1024:.1f} KB)")
-    print(f"Family:         {manifest.get('family', 'N/A')}")
-    print(f"Version:        {manifest.get('version', 'N/A')}")
-    print(f"Is Checkpoint:  {manifest.get('is_checkpoint', False)}")
-    if manifest.get("is_checkpoint"):
-        print(f"Epoch / Step:   epoch {manifest.get('epoch', 0)}, step {manifest.get('step', 0)}")
-    print(f"Dataset SHA:    {manifest.get('dataset_hash') or 'N/A'}")
-    print(f"Created At:     {manifest.get('created_at', 'N/A')}")
+    print(f"File:           {info['file']} ({info['size_bytes'] / 1024:.1f} KB)")
+    print(f"Family:         {info.get('family', 'N/A')}")
+    print(f"Version:        {info.get('version', 'N/A')}")
+    print(f"Is Checkpoint:  {info.get('is_checkpoint', False)}")
+    if info.get("is_checkpoint"):
+        print(f"Epoch / Step:   epoch {info.get('epoch', 0)}, step {info.get('step', 0)}")
+    print(f"Dataset SHA:    {info.get('dataset_hash') or 'N/A'}")
+    print(f"Created At:     {info.get('created_at') or 'N/A'}")
+    print(f"Weights Format: {format_type} ({weights_mb:.2f} MB)")
+    if info.get("total_params"):
+        print(f"Total Params:   {info['total_params']:,}")
+    if info.get("weights_sha256"):
+        print(f"Weights SHA:    {info['weights_sha256']}")
+    if info.get("files"):
+        print(f"Files in zip:   {', '.join(info['files'])}")
 
-    if format_type == "safetensors":
-        print(f"Weights Format: safetensors ({weights_size_bytes / (1024 * 1024):.2f} MB)")
-    elif format_type == "onnx":
-        print(f"Weights Format: onnx ({weights_size_bytes / (1024 * 1024):.2f} MB)")
-    else:
-        print(f"Weights Format: {format_type}")
+    if tensors:
+        print(f"\nModel Tensors / Layers ({len(tensors)} total):")
+        for t in tensors[:15]:
+            print(f"  - {t['name']}: shape={t['shape']}, dtype={t['dtype']} ({t['param_count']:,} params)")
+        if len(tensors) > 15:
+            print(f"  ... and {len(tensors) - 15} more tensors (use --json for full list)")
 
-    if model_sha:
-        print(f"Weights SHA:    {model_sha}")
-    if files_in_zip:
-        print(f"Files in zip:   {', '.join(files_in_zip)}")
-
-    # Print SafeTensors Layer Shapes if parsed
-    if tensors_info:
-        print(f"\nModel Tensors / Layers ({len(tensors_info)} total):")
-        display_tensors = tensors_info[:15]
-        for t in display_tensors:
-            print(f"  - {t['name']}: shape={t['shape']}, dtype={t['dtype']}")
-        if len(tensors_info) > 15:
-            print(f"  ... and {len(tensors_info) - 15} more tensors (use --json for full list)")
-
-    # Print Schema
-    schema = manifest.get("schema")
-    if schema:
+    schema = info.get("schema")
+    if isinstance(schema, dict):
         print("\nI/O Schema Contract:")
-        print(f"  Input structure:  {schema.get('input_structure')}")
-        inputs = schema.get("inputs", [])
-        if isinstance(inputs, list):
-            for idx, item in enumerate(inputs):
-                print(
-                    f"    [{idx}] {item.get('name')}: shape={item.get('shape')}, dtype={item.get('dtype')}"
-                )
-        elif isinstance(inputs, dict):
-            for k, v in inputs.items():
-                print(f"    ['{k}']: shape={v.get('shape')}, dtype={v.get('dtype')}")
+        print(f"  Inputs ({schema.get('input_structure')}):  {_format_schema_nodes(schema.get('inputs'))}")
+        print(f"  Outputs ({schema.get('output_structure')}): {_format_schema_nodes(schema.get('outputs'))}")
 
-        print(f"  Output structure: {schema.get('output_structure')}")
-        outputs = schema.get("outputs", [])
-        if isinstance(outputs, list):
-            for idx, item in enumerate(outputs):
-                print(
-                    f"    [{idx}] {item.get('name')}: shape={item.get('shape')}, dtype={item.get('dtype')}"
-                )
-        elif isinstance(outputs, dict):
-            for k, v in outputs.items():
-                print(f"    ['{k}']: shape={v.get('shape')}, dtype={v.get('dtype')}")
-
-    # Print Metrics
-    metrics = manifest.get("metrics")
+    metrics = info.get("metrics")
     if metrics:
         print("\nRecorded Metrics:")
         for k, v in metrics.items():
             print(f"  {k}: {v}")
 
+    if show_config and info.get("config"):
+        print("\nEmbedded config.yaml:")
+        print(info["config"].rstrip())
+
     print("=" * 60 + "\n")
 
 
-def run_report(target_path: str, output: str) -> None:
-    """Generate standalone HTML report."""
-    try:
-        out_path = generate_report(target_path, output)
-        print(f"Report successfully generated at: {out_path}")
-    except Exception as e:
-        print(f"Error generating report: {e}", file=sys.stderr)
-        sys.exit(1)
+def _print_bundle_diff_text(diff: dict[str, Any]) -> None:
+    """Print human-readable comparison between two .bundle files."""
+    print("\n" + "=" * 68)
+    print(f"MANGOSTA BUNDLE DIFF: {diff['left']}  vs  {diff['right']}")
+    print("=" * 68)
+    for field, entry in diff["summary"].items():
+        marker = "*" if entry["changed"] else " "
+        print(f" {marker} {field:18s} {entry['left']}  ->  {entry['right']}")
+
+    if diff["metrics"]:
+        print("\nMetrics:")
+        for k, entry in diff["metrics"].items():
+            marker = "*" if entry["changed"] else " "
+            print(f" {marker} {k:18s} {entry['left']}  ->  {entry['right']}")
+
+    print(f"\nSchema changed: {diff['schema_changed']}")
+    print(f"Layers count:   {diff['total_layers']['left']} vs {diff['total_layers']['right']}")
+    if diff["changed_layers"]:
+        print(f"Changed layers ({len(diff['changed_layers'])}):")
+        for layer in diff["changed_layers"][:20]:
+            print(f"  * {layer['name']}: {layer['left']} -> {layer['right']}")
+        if len(diff["changed_layers"]) > 20:
+            print(f"  ... and {len(diff['changed_layers']) - 20} more")
+    print("=" * 68 + "\n")
+
+
+def inspect_bundle(
+    bundle_path: str,
+    as_json: bool = False,
+    diff_path: str | None = None,
+    show_config: bool = False,
+) -> None:
+    """Inspect a .bundle archive (or diff two bundles) in terminal or JSON."""
+    info = inspect_bundle_metadata(bundle_path)
+    if diff_path is not None:
+        other_info = inspect_bundle_metadata(diff_path)
+        diff_payload = _build_diff_payload(info, other_info)
+        if as_json:
+            print(json.dumps(diff_payload, indent=2))
+        else:
+            _print_bundle_diff_text(diff_payload)
+        return
+
+    if as_json:
+        print(json.dumps(_build_inspect_payload(info), indent=2))
+    else:
+        _print_bundle_text(info, show_config=show_config)
 
 
 def run_view(target_path: str = ".", port: int = 8501, open_browser: bool = True) -> None:
     """Ephemeral zero-daemon viewer using Python's standard library http.server."""
     target = Path(target_path).resolve()
     if not target.exists():
-        print(f"Error: Target path '{target_path}' does not exist.", file=sys.stderr)
-        sys.exit(1)
-
+        raise FileNotFoundError(f"Target path '{target_path}' does not exist.")
     start_viewer(target, port=port, open_browser=open_browser)
 
 
-def main() -> None:
-    """CLI entrypoint for mangosta."""
+def _cmd_init(args: argparse.Namespace) -> None:
+    dest = init_project(args.name)
+    print(f"Initialized mangosta project in '{dest}'")
+    uv_bin = shutil.which("uv")
+    if uv_bin is not None:
+        res = subprocess.run([uv_bin, "sync"], cwd=dest, check=False)
+        if res.returncode != 0:
+            print("Warning: 'uv sync' did not complete; run 'uv sync' manually if needed.")
+
+
+def _cmd_inspect(args: argparse.Namespace) -> None:
+    inspect_bundle(
+        args.bundle,
+        as_json=args.json,
+        diff_path=args.diff,
+        show_config=args.config,
+    )
+
+
+def _cmd_view(args: argparse.Namespace) -> None:
+    run_view(args.target, port=args.port, open_browser=not args.no_browser)
+
+
+def _cmd_export_onnx(args: argparse.Namespace) -> None:
+    if args.module:
+        cwd_str = str(Path.cwd())
+        if cwd_str not in sys.path:
+            sys.path.insert(0, cwd_str)
+        importlib.import_module(args.module)
+
+    shape = tuple(args.input_shape) if args.input_shape else None
+    from mangosta.export.onnx import export_onnx
+
+    out = export_onnx(
+        model_or_bundle=args.bundle,
+        output_path=args.output,
+        sample_input_shape=shape,
+        output_mapping=args.output_mapping,
+        float16=args.fp16,
+        opset_version=args.opset,
+    )
+    if args.json:
+        print(json.dumps({"status": "ok", "output": str(out)}, indent=2))
+    else:
+        print(f"Successfully exported model to ONNX: {out}")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Build and configure the mangosta CLI parser."""
     parser = argparse.ArgumentParser(
         prog="mangosta",
         description="Lightweight MLOps and Model Lifecycle Management for PyTorch",
     )
+    parser.add_argument(
+        "-V",
+        "--version",
+        action="version",
+        version=f"%(prog)s {_get_version()}",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # Subcommand: init
+    # init
     init_parser = subparsers.add_parser("init", help="Initialize a structured PyTorch project")
     init_parser.add_argument(
         "name",
@@ -234,31 +306,29 @@ def main() -> None:
         default=".",
         help="Project directory or name (default: current directory)",
     )
-    init_parser.add_argument(
-        "--template",
-        default="default",
-        help="Project template (default: default)",
-    )
+    init_parser.set_defaults(handler=_cmd_init)
 
-    # Subcommand: inspect
-    inspect_parser = subparsers.add_parser("inspect", help="Inspect a .bundle archive in terminal")
+    # inspect
+    inspect_parser = subparsers.add_parser("inspect", help="Inspect or diff .bundle archives")
     inspect_parser.add_argument("bundle", help="Path to .bundle file")
+    inspect_parser.add_argument(
+        "--diff",
+        default=None,
+        help="Compare against a second .bundle file",
+    )
+    inspect_parser.add_argument(
+        "--config",
+        action="store_true",
+        help="Print embedded config.yaml in text output",
+    )
     inspect_parser.add_argument(
         "--json",
         action="store_true",
         help="Output machine-readable JSON (useful for CI and AI agents)",
     )
+    inspect_parser.set_defaults(handler=_cmd_inspect)
 
-    # Subcommand: report
-    report_parser = subparsers.add_parser(
-        "report", help="Generate standalone interactive HTML report"
-    )
-    report_parser.add_argument("target", help="Path to run directory or .bundle file")
-    report_parser.add_argument(
-        "-o", "--output", default="report.html", help="Output HTML file path"
-    )
-
-    # Subcommand: view
+    # view
     view_parser = subparsers.add_parser("view", help="Start ephemeral local browser viewer")
     view_parser.add_argument(
         "target",
@@ -272,11 +342,12 @@ def main() -> None:
     view_parser.add_argument(
         "--no-browser", action="store_true", help="Do not automatically open browser"
     )
+    view_parser.set_defaults(handler=_cmd_view)
 
-    # Subcommand: export-onnx
+    # export-onnx
     export_parser = subparsers.add_parser("export-onnx", help="Export a bundle to standalone ONNX")
     export_parser.add_argument("bundle", help="Path to .bundle file")
-    export_parser.add_argument("-o", "--output", required=True, help="Target .onnx output path")
+    export_parser.add_argument("-o", "--output", required=True, help="Target .onnx or .onnx.bundle path")
     export_parser.add_argument(
         "--fp16", action="store_true", help="Export with Float16 half precision"
     )
@@ -287,52 +358,41 @@ def main() -> None:
         "--output-mapping", nargs="+", help="Ordered keys to unroll dictionary output"
     )
     export_parser.add_argument(
-        "--input-shape", nargs="+", type=int, help="Dummy input shape (e.g. 1 3 224 224)"
+        "--input-shape",
+        nargs="+",
+        type=int,
+        help="Dummy input shape (auto-inferred from bundle ModelSchema if omitted)",
     )
     export_parser.add_argument(
         "-m",
         "--module",
-        help="Python module to import containing registered models (e.g. models or examples.lifecycle_demo)",
+        help="Python module to import containing registered models",
     )
+    export_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output machine-readable JSON",
+    )
+    export_parser.set_defaults(handler=_cmd_export_onnx)
 
+    return parser
+
+
+def main() -> None:
+    """CLI entrypoint for mangosta."""
+    parser = build_parser()
     args = parser.parse_args()
-
-    if args.command == "init":
-        dest = init_project(args.name, template=args.template)
-        print(f"Initialized mangosta project in '{dest}'")
-        uv_bin = shutil.which("uv")
-        if uv_bin is not None:
-            res = subprocess.run([uv_bin, "sync"], cwd=dest, check=False)
-            if res.returncode != 0:
-                print("Warning: 'uv sync' did not complete; run 'uv sync' manually if needed.")
-    elif args.command == "inspect":
-        inspect_bundle(args.bundle, as_json=args.json)
-    elif args.command == "report":
-        run_report(args.target, args.output)
-    elif args.command == "view":
-        run_view(args.target, port=args.port, open_browser=not args.no_browser)
-    elif args.command == "export-onnx":
-        if args.module:
-            import importlib
-            import sys
-            from pathlib import Path
-
-            if str(Path.cwd()) not in sys.path:
-                sys.path.insert(0, str(Path.cwd()))
-            importlib.import_module(args.module)
-
-        shape = tuple(args.input_shape) if args.input_shape else (1, 4)
-        from mangosta.export.onnx import export_onnx
-
-        out = export_onnx(
-            model_or_bundle=args.bundle,
-            output_path=args.output,
-            sample_input_shape=shape,
-            output_mapping=args.output_mapping,
-            float16=args.fp16,
-            opset_version=args.opset,
-        )
-        print(f"Successfully exported model to ONNX: {out}")
+    handler: Callable[[argparse.Namespace], None] = args.handler
+    try:
+        handler(args)
+    except KeyboardInterrupt:
+        sys.exit(130)
+    except Exception as exc:
+        if getattr(args, "json", False):
+            print(json.dumps({"error": str(exc)}, indent=2), file=sys.stderr)
+        else:
+            print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

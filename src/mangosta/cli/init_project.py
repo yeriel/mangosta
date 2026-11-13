@@ -191,8 +191,14 @@ def main():
     bundle = load_bundle(args.bundle)
     print(f"Loaded bundle: {bundle.family} v{bundle.version}")
 
+    # Infer sample input shape from ModelSchema contract when available
+    if bundle.schema and bundle.schema.inputs:
+        in_shape = tuple(d if d is not None else 2 for d in bundle.schema.inputs[0].shape)
+    else:
+        in_shape = (2, 8)
+
     # Forward inference with automatic shape and dtype contract validation
-    sample = torch.randn(2, 8)
+    sample = torch.randn(*in_shape)
     preds = bundle.predict(sample)
     print("Inference successful. Predictions shape:", list(preds.shape))
 
@@ -226,7 +232,11 @@ def main():
     args = parser.parse_args()
 
     bundle = load_bundle(args.bundle)
-    dummy = torch.randn(1, 8)
+    if bundle.schema and bundle.schema.inputs:
+        in_shape = tuple(d if d is not None else 1 for d in bundle.schema.inputs[0].shape)
+    else:
+        in_shape = (1, 8)
+    dummy = torch.randn(*in_shape)
 
     # Warmup
     for _ in range(args.warmup):

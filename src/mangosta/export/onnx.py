@@ -216,6 +216,20 @@ def export_onnx(
             dummy_input = sample_input
     elif sample_input_shape is not None:
         dummy_input = torch.randn(*sample_input_shape, device=target_device, dtype=tensor_dtype)
+    elif loaded_bundle is not None and loaded_bundle.schema is not None and loaded_bundle.schema.inputs:
+        schema_inputs = loaded_bundle.schema.inputs
+        if len(schema_inputs) == 1:
+            inferred = tuple(d if d is not None else 1 for d in schema_inputs[0].shape)
+            dummy_input = torch.randn(*inferred, device=target_device, dtype=tensor_dtype)
+        else:
+            dummy_input = tuple(
+                torch.randn(
+                    *(d if d is not None else 1 for d in spec.shape),
+                    device=target_device,
+                    dtype=tensor_dtype,
+                )
+                for spec in schema_inputs
+            )
     else:
         raise ValueError(
             "Must provide either 'sample_input' or 'sample_input_shape' for ONNX tracing."

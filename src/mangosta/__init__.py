@@ -56,7 +56,7 @@ from mangosta.serving.runner import (
 
 # Universal bundle loader & manifest reader
 from mangosta.artifacts.loader import load_bundle
-from mangosta.artifacts.bundle import read_bundle_manifest
+from mangosta.artifacts.bundle import inspect_bundle_metadata, read_bundle_manifest
 
 # Training & PyTorch-specific components (loaded conditionally)
 if HAS_TORCH:
@@ -79,7 +79,6 @@ if HAS_TORCH:
     from mangosta.tracking import (
         RunTracker,
         compute_sha256,
-        generate_report,
         quick_track,
         start_viewer,
     )
@@ -103,6 +102,7 @@ _BASE_ALL = [
     # Serving
     "load_bundle",
     "read_bundle_manifest",
+    "inspect_bundle_metadata",
     "LoadedONNXBundle",
     "ONNXRunner",
     "load_onnx_bundle",
@@ -134,7 +134,6 @@ _TORCH_ALL = [
     "RunTracker",
     "quick_track",
     "compute_sha256",
-    "generate_report",
     "start_viewer",
     # PyTorch Artifacts
     "save_bundle",

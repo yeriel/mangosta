@@ -180,12 +180,10 @@ Mangosta commands are invoked inside your project using `uv run mangosta <comman
 
 | Command | Description |
 | :--- | :--- |
-| `uv run mangosta init [name]` | Scaffold a production-grade Clean Architecture project. |
-| `uv run mangosta inspect <bundle>` | Inspect internal bundle contents, tensor layers, and signatures. |
-| `uv run mangosta inspect <bundle> --json` | Fast (<5ms) zero-torch JSON inspection for AI agents & CI/CD. |
-| `uv run mangosta view [target] [--port 8501]` | Start the ephemeral local visual dashboard (Real Data Timelapse, A/B/GT grid, Multi-Run Compare, EMA smoothing, SafeTensors inspector, Live Watch). |
-| `uv run mangosta report <target> [-o report.html]` | Generate a self-contained, offline interactive HTML report. |
-| `uv run mangosta export-onnx <bundle> -o <out>` | Export bundle directly to standalone ONNX or `.onnx.bundle`. |
+| `uv run mangosta init [name]` | Scaffold a production-grade Clean Architecture project (`uv sync` runs automatically). |
+| `uv run mangosta inspect <bundle> [--diff <other>] [--config] [--json]` | Inspect or compare `.bundle` archives, tensor layers, and contracts without importing PyTorch. |
+| `uv run mangosta view [target] [--port 8501]` | Start the ephemeral local visual dashboard (Real Data Timelapse, A/B/GT grid, Multi-Run & Bundle Compare, EMA smoothing, Live Watch). |
+| `uv run mangosta export-onnx <bundle> -o <out>` | Export bundle directly to standalone ONNX or `.onnx.bundle` (auto-infers `--input-shape` from `ModelSchema`). |
 
 ---
 

@@ -27,11 +27,11 @@ Supporting files in this skill directory:
 | :--- | :--- | :--- |
 | **`mangosta.core`** | Typed config, deterministic seeding, model/trainer registries & tensor contracts. | `MangostaConfig`, `load_config`, `seed_everything`, `ModelRegistry`, `TrainerRegistry`, `@register_model`, `@register_trainer`, `ModelSchema`, `TensorSpec`, `infer_schema` |
 | **`mangosta.engine`** | White-box PyTorch training loop with automated tracking, bundles, AMP, EarlyStopping & resume. | `BaseTrainer` |
-| **`mangosta.artifacts`** | Atomic ZIP `.bundle` creation, decoupled loading & RNG state recovery. | `save_bundle`, `load_bundle`, `resume_training`, `read_bundle_manifest` |
-| **`mangosta.tracking`** | Atomic JSONL step metrics, validation timelapses, HTML reports & viewer. | `RunTracker`, `quick_track`, `generate_report`, `start_viewer` |
-| **`mangosta.export`** | Decoupled ONNX graph export with FP16 and dictionary output unrolling. | `export_onnx`, `export_onnx_as_bundle` |
+| **`mangosta.artifacts`** | Atomic ZIP `.bundle` creation, decoupled loading, zero-torch metadata inspection & RNG recovery. | `save_bundle`, `load_bundle`, `resume_training`, `read_bundle_manifest`, `inspect_bundle_metadata` |
+| **`mangosta.tracking`** | Atomic JSONL step metrics, validation timelapses & ephemeral browser viewer. | `RunTracker`, `quick_track`, `compute_sha256`, `start_viewer` |
+| **`mangosta.export`** | Decoupled ONNX graph export with FP16, `ModelSchema` shape auto-inference & output unrolling. | `export_onnx`, `export_onnx_as_bundle` |
 | **`mangosta.serving`** | Slim, zero-PyTorch microservice inference engine. | `ONNXRunner`, `load_onnx_bundle` |
-| **`mangosta.cli`** | Project scaffolding and ephemeral CLI tools. | `uv run mangosta init`, `inspect --json`, `report`, `view`, `export-onnx` |
+| **`mangosta.cli`** | Project scaffolding and streamlined 4-command CLI (`--version`). | `uv run mangosta init`, `inspect [--diff] [--config] [--json]`, `view`, `export-onnx` |
 
 All primary symbols are re-exported at top level (`from mangosta import ...`).
 
@@ -69,9 +69,10 @@ All primary symbols are re-exported at top level (`from mangosta import ...`).
 5. **Checkpoints vs Deployment & Zero-Torch Serving**:
    - PyTorch inference: `bundle = load_bundle("checkpoints/model_final.bundle"); preds = bundle.predict(tensor)`.
    - Production microservices: export via `export_onnx_as_bundle(...)` and serve pure NumPy arrays with `load_onnx_bundle(...)` / `ONNXRunner.predict(np_array)` (zero PyTorch).
-6. **Zero Background Daemons & Fast Inspection**:
-   - Inspect `.bundle` files in `< 5ms` via `uv run mangosta inspect <bundle> --json` (reads SafeTensors header without loading weights).
-   - Generate offline HTML reports with `uv run mangosta report <run_or_bundle> -o report.html` or launch the ephemeral local viewer with `uv run mangosta view`.
+6. **Zero Background Daemons, Fast Inspection & Model Comparison**:
+   - Inspect `.bundle` files (including `total_params`, layer shapes, and `ModelSchema`) in `< 5ms` via `uv run mangosta inspect <bundle> --json` or compare two bundles via `uv run mangosta inspect a.bundle --diff b.bundle [--json]`.
+   - Export to ONNX with `uv run mangosta export-onnx <bundle> -o <out>` (auto-infers `--input-shape` from `ModelSchema` when omitted).
+   - Launch the ephemeral local viewer with `uv run mangosta view` for multi-run metric/parameter comparison, validation timelapses with pan/zoom lightbox, and side-by-side `Bundle Inspector` comparison.
 
 ---
 

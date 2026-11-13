@@ -26,7 +26,6 @@ from mangosta import (
     ModelRegistry,
     export_onnx,
     export_onnx_as_bundle,
-    generate_report,
     load_bundle,
     read_bundle_manifest,
     register_model,
@@ -144,18 +143,16 @@ def main() -> None:
         inspect_bundle(pytorch_bundle, as_json=True)
 
         # -------------------------------------------------------------
-        # STEP 5: HOW TO GENERATE OFFLINE INTERACTIVE HTML REPORTS
+        # STEP 5: DIFF PYTORCH BUNDLE VS ONNX BUNDLE
         # -------------------------------------------------------------
-        print("\n[STEP 5] Generating Offline HTML Report (Zero Background Daemons)...")
-        generate_report(pytorch_bundle, report_file)
-        print(f"  ✓ Generated interactive report: {report_file.name} ({report_file.stat().st_size} bytes)")
-        print("    Open in any browser: file://" + str(report_file))
+        print("\n[STEP 5] Comparing PyTorch .bundle vs ONNX .onnx.bundle (mangosta inspect --diff)...")
+        inspect_bundle(pytorch_bundle, diff_path=onnx_bundle, as_json=True)
 
         print("\n" + "=" * 75)
-        print("SUMMARY: Model export, inspection, and reporting completed successfully.")
+        print("SUMMARY: Model export and inspection completed successfully.")
         print("  • Standalone ONNX: Unrolled dictionary outputs, dynamic axes, verified graph")
         print("  • ONNX Bundle: Portable, zero-torch production container artifact")
-        print("  • Fast Inspection: Programmatic JSON payload in sub-5ms for AI Agents")
+        print("  • Fast Inspection & Diff: Programmatic JSON payload in sub-5ms for AI Agents")
         print("=" * 75)
 
 

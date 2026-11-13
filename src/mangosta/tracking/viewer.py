@@ -13,17 +13,14 @@ from datetime import datetime, timezone
 import http.server
 import importlib.metadata
 import json
-import math
 import re
 import socketserver
-import struct
 import urllib.parse
 import webbrowser
-import zipfile
 from pathlib import Path
 from typing import Any
 
-from mangosta.artifacts.bundle import read_bundle_manifest
+from mangosta.artifacts.bundle import inspect_bundle_metadata, read_bundle_manifest
 
 
 def _get_mangosta_version() -> str:
@@ -352,65 +349,7 @@ def _load_bundle_details(bundle_path: Path) -> dict[str, Any] | None:
     if not bundle_path.is_file():
         return None
     try:
-        total_bytes = bundle_path.stat().st_size
-        with zipfile.ZipFile(bundle_path, "r") as zf:
-            namelist = zf.namelist()
-            manifest_raw = zf.read("manifest.json").decode("utf-8")
-            manifest = json.loads(manifest_raw)
-
-            tensors: list[dict[str, Any]] = []
-            total_params = 0
-            if "model.safetensors" in namelist:
-                with zf.open("model.safetensors") as sf:
-                    header_len_bytes = sf.read(8)
-                    if len(header_len_bytes) == 8:
-                        header_len = struct.unpack("<Q", header_len_bytes)[0]
-                        header_json_bytes = sf.read(header_len)
-                        raw_tensors = json.loads(header_json_bytes.decode("utf-8"))
-                        for k, v in raw_tensors.items():
-                            if k != "__metadata__" and isinstance(v, dict):
-                                shape = v.get("shape", [])
-                                param_count = math.prod(shape) if shape else 1
-                                offsets = v.get("data_offsets", [])
-                                tensor_bytes = (
-                                    max(0, int(offsets[1]) - int(offsets[0]))
-                                    if isinstance(offsets, list) and len(offsets) == 2
-                                    else 0
-                                )
-                                total_params += param_count
-                                tensors.append({
-                                    "name": k,
-                                    "shape": shape,
-                                    "dtype": v.get("dtype", "unknown"),
-                                    "param_count": param_count,
-                                    "size_bytes": tensor_bytes,
-                                })
-
-            config_content = None
-            if "config.yaml" in namelist:
-                config_content = zf.read("config.yaml").decode("utf-8")
-
-            return {
-                "file": bundle_path.name,
-                "path": str(bundle_path),
-                "size_bytes": total_bytes,
-                "family": manifest.get("family", "unknown"),
-                "version": manifest.get("version", "unknown"),
-                "format": manifest.get("weights_format", "unknown"),
-                "weights_sha256": manifest.get("weights_sha256") or manifest.get("model_sha256"),
-                "is_checkpoint": manifest.get("is_checkpoint", False),
-                "epoch": manifest.get("epoch"),
-                "step": manifest.get("step"),
-                "created_at": manifest.get("created_at"),
-                "init_args": manifest.get("init_args", {}),
-                "metrics": manifest.get("metrics", {}),
-                "schema": manifest.get("schema"),
-                "env": manifest.get("env", {}),
-                "config": config_content,
-                "total_params": total_params,
-                "tensors": tensors,
-                "files": [f for f in namelist if not f.endswith("/")],
-            }
+        return inspect_bundle_metadata(bundle_path)
     except Exception as e:
         return {"error": str(e), "file": bundle_path.name}
 

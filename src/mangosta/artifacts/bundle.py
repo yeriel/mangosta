@@ -5,9 +5,11 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import math
 import os
 import platform
 import random
+import struct
 import uuid
 import zipfile
 from datetime import datetime, timezone
@@ -278,5 +280,94 @@ def read_bundle_manifest(bundle_path: str | Path) -> dict[str, Any]:
             data = zf.read("manifest.json")
             manifest = json.loads(data.decode("utf-8"))
             return dict(manifest) if isinstance(manifest, dict) else {}
+    except zipfile.BadZipFile as e:
+        raise BundleCorruptedError(f"Invalid or corrupted ZIP archive: {bundle_path}") from e
+
+
+def inspect_bundle_metadata(bundle_path: str | Path) -> dict[str, Any]:
+    """Read complete zero-torch metadata, contract schema, config, and layer shapes from a .bundle."""
+    path = Path(bundle_path).resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"Bundle file not found: {bundle_path}")
+
+    try:
+        total_bytes = path.stat().st_size
+        with zipfile.ZipFile(path, "r") as zf:
+            namelist = zf.namelist()
+            if "manifest.json" not in namelist:
+                raise BundleCorruptedError(f"Missing 'manifest.json' in bundle: {bundle_path}")
+
+            manifest_raw = zf.read("manifest.json").decode("utf-8")
+            manifest = json.loads(manifest_raw)
+            if not isinstance(manifest, dict):
+                manifest = {}
+
+            format_type = manifest.get("weights_format", "unknown")
+            weights_size_bytes = 0
+            tensors: list[dict[str, Any]] = []
+            total_params = 0
+
+            if "model.safetensors" in namelist:
+                format_type = "safetensors"
+                weights_size_bytes = zf.getinfo("model.safetensors").file_size
+                with zf.open("model.safetensors", "r") as sf:
+                    header_len_bytes = sf.read(8)
+                    if len(header_len_bytes) == 8:
+                        header_len = struct.unpack("<Q", header_len_bytes)[0]
+                        header_json_bytes = sf.read(header_len)
+                        raw_tensors = json.loads(header_json_bytes.decode("utf-8"))
+                        if isinstance(raw_tensors, dict):
+                            for k, v in raw_tensors.items():
+                                if k != "__metadata__" and isinstance(v, dict):
+                                    shape = v.get("shape", [])
+                                    param_count = math.prod(shape) if shape else 1
+                                    offsets = v.get("data_offsets", [])
+                                    tensor_bytes = (
+                                        max(0, int(offsets[1]) - int(offsets[0]))
+                                        if isinstance(offsets, list) and len(offsets) == 2
+                                        else 0
+                                    )
+                                    total_params += param_count
+                                    tensors.append(
+                                        {
+                                            "name": k,
+                                            "shape": shape,
+                                            "dtype": v.get("dtype", "unknown"),
+                                            "param_count": param_count,
+                                            "size_bytes": tensor_bytes,
+                                        }
+                                    )
+            elif "model.onnx" in namelist:
+                format_type = "onnx"
+                weights_size_bytes = zf.getinfo("model.onnx").file_size
+
+            config_content = None
+            if "config.yaml" in namelist:
+                config_content = zf.read("config.yaml").decode("utf-8")
+
+            return {
+                "file": path.name,
+                "path": str(path),
+                "size_bytes": total_bytes,
+                "family": manifest.get("family", "unknown"),
+                "version": manifest.get("version", "unknown"),
+                "format": format_type,
+                "weights_size_bytes": weights_size_bytes,
+                "weights_sha256": manifest.get("weights_sha256") or manifest.get("model_sha256"),
+                "is_checkpoint": manifest.get("is_checkpoint", False),
+                "epoch": manifest.get("epoch"),
+                "step": manifest.get("step"),
+                "dataset_hash": manifest.get("dataset_hash"),
+                "created_at": manifest.get("created_at"),
+                "init_args": manifest.get("init_args", {}),
+                "metrics": manifest.get("metrics", {}),
+                "schema": manifest.get("schema"),
+                "env": manifest.get("env", {}),
+                "metadata": manifest.get("metadata", {}),
+                "config": config_content,
+                "total_params": total_params,
+                "tensors": tensors,
+                "files": [f for f in namelist if not f.endswith("/")],
+            }
     except zipfile.BadZipFile as e:
         raise BundleCorruptedError(f"Invalid or corrupted ZIP archive: {bundle_path}") from e

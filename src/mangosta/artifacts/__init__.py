@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from mangosta.artifacts.bundle import (
+    inspect_bundle_metadata,
     read_bundle_manifest,
     save_bundle,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "save_bundle",
     "load_bundle",
     "read_bundle_manifest",
+    "inspect_bundle_metadata",
     "LoadedBundle",
     "LoadedONNXBundle",
     "ResumeState",
