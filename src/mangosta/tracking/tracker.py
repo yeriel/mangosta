@@ -67,6 +67,22 @@ def _get_git_commit(cwd: Path | None = None) -> str | None:
     return None
 
 
+_CACHED_TORCH_VERSION: str | None = None
+
+
+def _get_torch_version() -> str:
+    global _CACHED_TORCH_VERSION
+    if _CACHED_TORCH_VERSION is not None:
+        return _CACHED_TORCH_VERSION
+    try:
+        import torch
+
+        _CACHED_TORCH_VERSION = getattr(torch, "__version__", "unknown")
+    except ImportError:
+        _CACHED_TORCH_VERSION = "not_installed"
+    return _CACHED_TORCH_VERSION
+
+
 class RunTracker:
     """Local, atomic experiment run logger with zero daemon or web dependencies."""
 
@@ -100,6 +116,7 @@ class RunTracker:
         self.start_time = datetime.now(timezone.utc).isoformat()
         self.end_time: str | None = None
         self.status = "running"
+        self.outcome: str | None = None
 
         self._metrics_cache: dict[str, list[dict[str, Any]]] = {}
         self._step_counter = 0
@@ -113,9 +130,16 @@ class RunTracker:
 
     def _load_existing_state(self) -> None:
         """Restore prior run metadata and step counter when resuming an existing run."""
+        import warnings
+
         try:
             existing = json.loads(self.metadata_file.read_text(encoding="utf-8"))
-        except Exception:
+        except Exception as exc:
+            warnings.warn(
+                f"Could not read existing run metadata '{self.metadata_file}': {exc}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
             return
         if isinstance(existing.get("params"), dict):
             self.params = dict(existing["params"])
@@ -125,6 +149,8 @@ class RunTracker:
             self.dataset_hash = existing["dataset_hash"]
         if isinstance(existing.get("start_time"), str):
             self.start_time = existing["start_time"]
+        if isinstance(existing.get("outcome"), str):
+            self.outcome = existing["outcome"]
         if self.metrics_file.exists():
             try:
                 max_step = 0
@@ -138,6 +164,11 @@ class RunTracker:
                 self._step_counter = max_step
             except Exception:
                 pass
+
+    def set_outcome(self, outcome: str | None) -> None:
+        """Mark the run outcome (e.g. 'winner', 'baseline', 'discarded', or None)."""
+        self.outcome = outcome
+        self._save_metadata()
 
     def log_params(self, params: dict[str, Any]) -> None:
         """Log multiple hyperparameters or configuration key-values at once."""
@@ -493,18 +524,13 @@ class RunTracker:
 
     def _save_metadata(self) -> None:
         """Atomically write run metadata to run.json via tmp file and os.replace."""
-        torch_ver = "not_installed"
-        try:
-            import torch
-
-            torch_ver = getattr(torch, "__version__", "unknown")
-        except ImportError:
-            pass
+        torch_ver = _get_torch_version()
 
         metadata = {
             "experiment": self.experiment,
             "run_name": self.run_name,
             "status": self.status,
+            "outcome": self.outcome,
             "start_time": self.start_time,
             "end_time": self.end_time,
             "params": self.params,

@@ -82,8 +82,14 @@ def _restore_rng_states(rng_states: dict[str, Any]) -> None:
                     for s in rng_states["torch_cuda"]
                 ]
                 torch.cuda.set_rng_state_all(cuda_states)
-            except Exception:
-                pass
+            except Exception as exc:
+                import warnings
+
+                warnings.warn(
+                    f"Failed to restore CUDA RNG states during resume: {exc}",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
 
     if "python_random" in rng_states and rng_states["python_random"] is not None:
         random.setstate(rng_states["python_random"])

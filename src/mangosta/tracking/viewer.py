@@ -90,6 +90,7 @@ def _build_run_summary(run_dir: Path, meta: dict[str, Any]) -> dict[str, Any]:
     return {
         "run_name": run_dir.name,
         "status": status,
+        "outcome": meta.get("outcome"),
         "start_time": start_time,
         "end_time": end_time,
         "duration_seconds": _compute_duration_seconds(start_time, end_time, status),
@@ -167,42 +168,69 @@ def _scan_experiments(root_dir: Path) -> dict[str, list[dict[str, Any]]]:
     return results
 
 
-def _load_run_details(root_dir: Path, experiment: str, run_name: str) -> dict[str, Any] | None:
-    """Load complete run details including parameters, metrics history, and artifacts."""
+def _find_run_dir(root_dir: Path, experiment: str, run_name: str) -> Path | None:
+    """Resolve the filesystem directory for a given experiment and run_name."""
     run_dir = root_dir / experiment / run_name
     if not run_dir.exists():
         for sub_name in ("experiments", "runs", "outputs"):
             candidate = root_dir / sub_name / experiment / run_name
             if candidate.exists():
-                run_dir = candidate
-                break
-    if not run_dir.exists():
-        if (root_dir / run_name).exists() and ((root_dir / run_name / "run.json").exists() or (root_dir / run_name / "metrics.jsonl").exists()):
-            run_dir = root_dir / run_name
-        elif root_dir.name == run_name and ((root_dir / "run.json").exists() or (root_dir / "metrics.jsonl").exists()):
-            run_dir = root_dir
-        else:
-            return None
+                return candidate
+    if run_dir.exists():
+        return run_dir
+    if (root_dir / run_name).exists() and (
+        (root_dir / run_name / "run.json").exists() or (root_dir / run_name / "metrics.jsonl").exists()
+    ):
+        return root_dir / run_name
+    if root_dir.name == run_name and (
+        (root_dir / "run.json").exists() or (root_dir / "metrics.jsonl").exists()
+    ):
+        return root_dir
+    return None
+
+
+_METRICS_CACHE: dict[Path, tuple[int, int, dict[str, list[dict[str, Any]]]]] = {}
+
+
+def _load_metrics_cached(metrics_file: Path) -> dict[str, list[dict[str, Any]]]:
+    """Parse metrics.jsonl using a (mtime_ns, size) cache to avoid re-parsing unchanged runs."""
+    if not metrics_file.exists():
+        return {}
+    stat = metrics_file.stat()
+    cached = _METRICS_CACHE.get(metrics_file)
+    if cached is not None and cached[0] == stat.st_mtime_ns and cached[1] == stat.st_size:
+        return cached[2]
+
+    metrics: dict[str, list[dict[str, Any]]] = {}
+    with open(metrics_file, "r", encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            try:
+                rec = json.loads(line)
+            except Exception:
+                continue
+            name = rec.get("name", "metric")
+            if name not in metrics:
+                metrics[name] = []
+            metrics[name].append(rec)
+
+    _METRICS_CACHE[metrics_file] = (stat.st_mtime_ns, stat.st_size, metrics)
+    return metrics
+
+
+def _load_run_details(root_dir: Path, experiment: str, run_name: str) -> dict[str, Any] | None:
+    """Load complete run details including parameters, metrics history, and artifacts."""
+    run_dir = _find_run_dir(root_dir, experiment, run_name)
+    if run_dir is None:
+        return None
 
     meta_file = run_dir / "run.json"
     metrics_file = run_dir / "metrics.jsonl"
     artifacts_dir = run_dir / "artifacts"
 
     meta = _read_json_safe(meta_file)
-
-    metrics: dict[str, list[dict[str, Any]]] = {}
-    if metrics_file.exists():
-        with open(metrics_file, "r", encoding="utf-8") as f:
-            for line in f:
-                if line.strip():
-                    try:
-                        rec = json.loads(line)
-                        name = rec.get("name", "metric")
-                        if name not in metrics:
-                            metrics[name] = []
-                        metrics[name].append(rec)
-                    except Exception:
-                        continue
+    metrics = _load_metrics_cached(metrics_file)
 
     # Artifacts list
     raw_artifacts: list[dict[str, Any]] = meta.get("artifacts", [])
@@ -365,6 +393,37 @@ def create_viewer_handler(root_dir: Path) -> type[http.server.BaseHTTPRequestHan
         def log_message(self, format: str, *args: Any) -> None:
             # Suppress normal HTTP logging for clean terminal
             pass
+
+        def do_POST(self) -> None:
+            parsed = urllib.parse.urlparse(self.path)
+            if parsed.path != "/api/runs/outcome":
+                self.send_error(404, "Endpoint not found")
+                return
+            length = int(self.headers.get("Content-Length", "0") or 0)
+            try:
+                body = json.loads(self.rfile.read(length).decode("utf-8")) if length > 0 else {}
+            except Exception:
+                self.send_error(400, "Invalid JSON body")
+                return
+            exp = str(body.get("exp", "")).strip()
+            run = str(body.get("run", "")).strip()
+            outcome = body.get("outcome")
+            if outcome == "":
+                outcome = None
+            if outcome not in (None, "winner", "baseline", "discarded"):
+                self.send_error(400, "Invalid outcome value")
+                return
+            run_dir = _find_run_dir(resolved_root, exp, run)
+            if run_dir is None:
+                self.send_error(404, "Run not found")
+                return
+            meta_file = run_dir / "run.json"
+            meta: dict[str, Any] = _read_json_safe(meta_file) if meta_file.exists() else {"experiment": exp, "run_name": run}
+            meta["outcome"] = outcome
+            tmp_file = meta_file.with_suffix(".tmp")
+            tmp_file.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+            tmp_file.replace(meta_file)
+            self._send_json({"ok": True, "outcome": outcome})
 
         def do_GET(self) -> None:
             parsed = urllib.parse.urlparse(self.path)
@@ -1211,6 +1270,13 @@ def _get_dashboard_html() -> str:
     <div id="sidebar">
       <div class="sidebar-search">
         <input type="text" id="run-search" placeholder="Filter runs..." oninput="renderSidebar()" />
+        <select id="outcome-filter" onchange="renderSidebar()" style="width:100%; margin-top:6px; font-size:0.75rem;">
+          <option value="all">All outcomes</option>
+          <option value="winner">★ Winner</option>
+          <option value="baseline">Baseline</option>
+          <option value="discarded">Discarded</option>
+          <option value="unmarked">Unmarked</option>
+        </select>
         <div id="compare-bar" class="compare-bar">
           <span id="compare-count">Compare runs</span>
           <div id="compare-actions" style="display:flex; gap:4px; align-items:center;">
@@ -1468,9 +1534,14 @@ def _get_dashboard_html() -> str:
       let firstExpRun = null;
 
       expNames.forEach(expName => {
-        const runs = experimentsData[expName].filter(r =>
-          r.run_name.toLowerCase().includes(searchVal) || expName.toLowerCase().includes(searchVal)
-        );
+        const outcomeFilter = (document.getElementById("outcome-filter") || {}).value || "all";
+        const runs = experimentsData[expName].filter(r => {
+          const matchesText = r.run_name.toLowerCase().includes(searchVal) || expName.toLowerCase().includes(searchVal);
+          if (!matchesText) return false;
+          if (outcomeFilter === "all") return true;
+          if (outcomeFilter === "unmarked") return !r.outcome;
+          return r.outcome === outcomeFilter;
+        });
         if (runs.length === 0) return;
 
         const group = document.createElement("div");
@@ -1490,6 +1561,13 @@ def _get_dashboard_html() -> str:
           const isChecked = selectedRuns.has(key);
           const durText = r.duration_seconds !== null && r.duration_seconds !== undefined ? formatDuration(r.duration_seconds) : r.status;
           const commitText = r.git_commit ? r.git_commit.slice(0, 7) : "";
+          const outcomeBadge = r.outcome === "winner"
+            ? `<span style="color:var(--ok); font-weight:700;">★ winner</span>`
+            : (r.outcome === "baseline"
+              ? `<span style="color:var(--accent); font-weight:600;">baseline</span>`
+              : (r.outcome === "discarded"
+                ? `<span style="color:var(--bad); font-weight:600;">discarded</span>`
+                : ""));
 
           item.innerHTML = `
             <input type="checkbox" class="run-checkbox" ${isChecked ? "checked" : ""} />
@@ -1500,6 +1578,7 @@ def _get_dashboard_html() -> str:
                 <span>${escapeHtml(durText)}</span>
                 <span>${r.artifacts_count} art</span>
                 ${commitText ? `<span>${escapeHtml(commitText)}</span>` : ""}
+                ${outcomeBadge}
               </div>
             </div>
           `;
@@ -1570,6 +1649,24 @@ def _get_dashboard_html() -> str:
       } else {
         quickCompareRuns(2);
       }
+    }
+
+    async function setRunOutcome(outcome) {
+      if (!activeExp || !activeRun) return;
+      const res = await fetch("/api/runs/outcome", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ exp: activeExp, run: activeRun, outcome: outcome || null })
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const key = `${activeExp}:${activeRun}`;
+      if (loadedRunsData[key]) loadedRunsData[key].outcome = data.outcome;
+      if (experimentsData[activeExp]) {
+        const item = experimentsData[activeExp].find(r => r.run_name === activeRun);
+        if (item) item.outcome = data.outcome;
+      }
+      renderSidebar();
     }
 
     async function selectSingleRun(exp, run) {
@@ -1702,11 +1799,23 @@ def _get_dashboard_html() -> str:
 
       const commit = activeData.git_commit ? activeData.git_commit.slice(0, 8) : "N/A";
       const dhash = activeData.dataset_hash ? activeData.dataset_hash.slice(0, 14) + "..." : "N/A";
+      const curOutcome = activeData.outcome || "";
       provEl.innerHTML = `
-        <div class="provenance-bar">
-          <span><strong>Run:</strong> ${escapeHtml(activeData.run_name)}</span>
-          <span><strong>Commit:</strong> ${escapeHtml(commit)}</span>
-          <span><strong>Dataset SHA-256:</strong> ${escapeHtml(dhash)}</span>
+        <div class="provenance-bar" style="justify-content:space-between; align-items:center;">
+          <div style="display:flex; flex-wrap:wrap; gap:14px;">
+            <span><strong>Run:</strong> ${escapeHtml(activeData.run_name)}</span>
+            <span><strong>Commit:</strong> ${escapeHtml(commit)}</span>
+            <span><strong>Dataset SHA-256:</strong> ${escapeHtml(dhash)}</span>
+          </div>
+          <label style="display:inline-flex; align-items:center; gap:6px; font-size:0.76rem; color:var(--text-muted);">
+            <strong>Outcome:</strong>
+            <select id="active-outcome-select" onchange="setRunOutcome(this.value)" style="font-size:0.75rem; padding:2px 6px;">
+              <option value="" ${curOutcome === "" ? "selected" : ""}>Unmarked</option>
+              <option value="winner" ${curOutcome === "winner" ? "selected" : ""}>★ Winner</option>
+              <option value="baseline" ${curOutcome === "baseline" ? "selected" : ""}>Baseline</option>
+              <option value="discarded" ${curOutcome === "discarded" ? "selected" : ""}>Discarded</option>
+            </select>
+          </label>
         </div>
       `;
 

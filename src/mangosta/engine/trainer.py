@@ -219,8 +219,6 @@ class BaseTrainer:
         self.val_loader = val_loader
 
         total_epochs = epochs if epochs is not None else self.cfg.training.epochs
-        ckpt_dir = Path(checkpoint_dir)
-        ckpt_dir.mkdir(parents=True, exist_ok=True)
 
         start_epoch = 1
         best_metric: float | None = None
@@ -266,6 +264,8 @@ class BaseTrainer:
         ) as run:
             self.run = run
             run.log_params(self.cfg.to_dict())
+            ckpt_dir = Path(checkpoint_dir) / self.cfg.experiment.name / run.run_name
+            ckpt_dir.mkdir(parents=True, exist_ok=True)
 
             for epoch in range(start_epoch, total_epochs + 1):
                 self.current_epoch = epoch
@@ -459,8 +459,14 @@ class BaseTrainer:
                     meta = raw_cfg.get("_mangosta_resume")
                     if isinstance(meta, dict):
                         return meta
-        except Exception:
-            pass
+        except Exception as exc:
+            import warnings
+
+            warnings.warn(
+                f"Could not read resume metadata from '{bundle_path}': {exc}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
         return {}
 
     @staticmethod
