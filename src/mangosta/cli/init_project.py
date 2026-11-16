@@ -448,25 +448,49 @@ def _write_meta(dest: Path) -> None:
         if local_skill.is_dir():
             _copy_skill_tree(local_skill, skill_dest)
 
-    # AGENTS.md (Root agent guidelines: KISS + SOLID principles & pointers to .agents/skills/mangosta/)
-    agents_root = """# AGENTS.md - Development & Architectural Guidelines
+    # AGENTS.md (Root agent guidelines: Engineering & Collaboration Protocol + Mangosta skill pointers)
+    agents_root = """# Engineering & Collaboration Protocol
 
-This project follows **KISS** (Keep It Simple, Stupid) and **SOLID** engineering principles, powered by [Mangosta](https://github.com/yeriel/mangosta) for PyTorch model lifecycle management.
+## 1. Non-Negotiable Technical Principles
+- **KISS & SOLID:** All final code must adhere to both principles. **Tie-breaker Rule (YAGNI):** When abstraction (SOLID) conflicts with simplicity (KISS), **KISS wins** unless multiple concrete implementations exist today.
+- **Fail-Fast:** Generic `try/except` blocks that swallow errors or return silent fallbacks are strictly forbidden. Errors must fail explicitly with clear context.
+- **Code Hygiene:** Zero commented-out dead code and zero `TODO` placeholders simulating missing logic.
 
-## 1. Core Engineering Philosophy
+## 2. Execution Guardrails (Blast Radius)
+- **Strict Scope:** Modify only what was agreed upon. If you spot out-of-scope technical debt, report it at the end without touching it.
+- **Protected Contracts:** Do not add external dependencies or break public contracts (signatures, schemas, I/O) without explicit approval.
 
-- **KISS (Keep It Simple, Stupid)**:
-  - Avoid unnecessary abstractions, background daemons, or heavy external microservices.
-  - Prefer flat, local, atomic file operations (SafeTensors, JSONL, `.bundle` ZIPs, YAML configs).
-  - Use `BaseTrainer` and `MangostaConfig` (`load_config`) instead of reimplementing training loops, AMP, EarlyStopping, or RNG checkpointing.
-  - Stick to established entrypoint patterns (`uv run train`, `uv run infer`, `uv run benchmark`).
+## 3. Dynamic Task Classification (Before Touching Any File)
 
-- **SOLID Principles**:
-  - **Single Responsibility (SRP)**: Distinct layers for strict config (`configs/`), data, models & trainers (`src/`), and orchestration entrypoints (`entrypoints/`).
-  - **Open/Closed (OCP)**: Extend architectures and trainers via `@register_model` and `@register_trainer` without altering core pipeline mechanisms.
-  - **Liskov Substitution (LSP)**: All neural network modules inherit from `torch.nn.Module`, and custom trainers inherit from `BaseTrainer`.
-  - **Interface Segregation (ISP)**: Separate training logic (`mangosta[full]`) from zero-PyTorch production serving (`mangosta[serving]` + `ONNXRunner`).
-  - **Dependency Inversion (DIP)**: Models and trainers are instantiated dynamically from `MangostaConfig` via `ModelRegistry.build_from_config(cfg)` and `TrainerRegistry.build_from_config(cfg, model=model)`.
+- **LEVEL 0 — Exploration & Discovery (Open-ended problem, no defined baseline):**
+  - *Applies when:* I present a problem from scratch, look for approaches, or no clear technical direction exists yet.
+  - **STOP. Writing code or proposing execution plans is forbidden.**
+  - Act as a first-principles technical sparring partner:
+    1. **Challenge & Scope:** Ask a maximum of 3–4 critical questions about real constraints (data, latency, scale, hardware, edge cases) if needed to decide.
+    2. **Approach Map:** Present 2–3 distinct paradigms to tackle the problem (from simplest/brute-force to most sophisticated), detailing real trade-offs and failure modes.
+    3. **Riskiest Assumption:** Identify what must be validated first (e.g., a minimal experiment or spike) before committing to an architecture.
+  - Move to Level 2 only after I explicitly confirm the chosen approach.
+
+- **LEVEL 1 — Grunt Work / Trivial Change (No design decisions):**
+  - *Applies only to:* Obvious isolated bugfixes, type annotations, logging, or unit tests for already-defined logic.
+  - *Action:* Implement directly within strict scope, verify, and deliver with proof of execution.
+
+- **LEVEL 2 — Design, Features, Refactors & Optimization:**
+  - *Applies to:* Multi-file changes, new logic, contract/dependency changes, or **any performance optimization (speed, memory, latency)**.
+  - **STOP. Editing code is forbidden.**
+  - **Exploration Freedom (Zero censorship of ideas):** Even though you cannot touch files yet, **you have full permission to challenge my premise**. If you see a simpler, radical, or out-of-the-box solution (even if it breaks current contracts), include it.
+  - Deliver a concise **Execution Spec** focused on **WHAT** to do (not line-by-line *how*):
+    1. **Diagnosis:** Current state (and measured/identified bottleneck if optimizing).
+    2. **Primary Proposal (Plan A):** Concrete changes respecting the current architecture.
+    3. **Lateral Alternative (Plan B — Optional):** Only if you spot a significantly simpler or more elegant out-of-the-box approach, along with its trade-offs.
+    4. **Risks & Success Criteria:** What could break and how success will be measured.
+  - Wait for my review, iteration, and explicit approval before implementing.
+
+- **LEVEL 3 — Manual / Co-Pilot Mode (When I say "I'll write it", "pair mode", or ask for a review):**
+  - Editing production files is forbidden. Discuss design, point out edge cases, audit my code against KISS/SOLID, or write tests/benchmarks only upon request.
+
+## 4. Definition of Done (Mandatory Evidence)
+- No coding task is complete until you execute and show the actual verification output (tests, linters, benchmarks, or reproduction script) proving it works and breaks nothing existing.
 
 ## 2. Agent Context & Deep Mangosta Documentation
 

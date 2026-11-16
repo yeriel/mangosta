@@ -76,6 +76,7 @@ class RunTracker:
         run_name: str | None = None,
         root_dir: str | Path = "experiments",
         sync_interval: int = 10,
+        resume: bool = False,
     ) -> None:
         if sync_interval < 0:
             raise ValueError(f"sync_interval must be non-negative, got {sync_interval}")
@@ -105,7 +106,38 @@ class RunTracker:
         self._orig_signals: dict[int, Any] = {}
         self._git_commit = _get_git_commit(self.run_dir)
 
+        if resume and self.metadata_file.exists():
+            self._load_existing_state()
+
         self._save_metadata()
+
+    def _load_existing_state(self) -> None:
+        """Restore prior run metadata and step counter when resuming an existing run."""
+        try:
+            existing = json.loads(self.metadata_file.read_text(encoding="utf-8"))
+        except Exception:
+            return
+        if isinstance(existing.get("params"), dict):
+            self.params = dict(existing["params"])
+        if isinstance(existing.get("artifacts"), list):
+            self.artifacts = list(existing["artifacts"])
+        if isinstance(existing.get("dataset_hash"), str):
+            self.dataset_hash = existing["dataset_hash"]
+        if isinstance(existing.get("start_time"), str):
+            self.start_time = existing["start_time"]
+        if self.metrics_file.exists():
+            try:
+                max_step = 0
+                for line in self.metrics_file.read_text(encoding="utf-8").splitlines():
+                    if not line.strip():
+                        continue
+                    record = json.loads(line)
+                    step_val = record.get("step")
+                    if isinstance(step_val, int):
+                        max_step = max(max_step, step_val)
+                self._step_counter = max_step
+            except Exception:
+                pass
 
     def log_params(self, params: dict[str, Any]) -> None:
         """Log multiple hyperparameters or configuration key-values at once."""

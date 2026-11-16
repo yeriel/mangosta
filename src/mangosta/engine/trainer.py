@@ -223,6 +223,8 @@ class BaseTrainer:
         ckpt_dir.mkdir(parents=True, exist_ok=True)
 
         start_epoch = 1
+        best_metric: float | None = None
+        resumed_run_name: str | None = None
         if resume_from is not None:
             state = resume_training(
                 bundle_path=resume_from,
@@ -235,6 +237,13 @@ class BaseTrainer:
             )
             start_epoch = state.epoch + 1
             self.global_step = state.step
+            resume_meta = self._read_resume_metadata(resume_from)
+            raw_name = resume_meta.get("run_name")
+            if isinstance(raw_name, str) and raw_name:
+                resumed_run_name = raw_name
+            raw_best = resume_meta.get("best_metric")
+            if isinstance(raw_best, (int, float)):
+                best_metric = float(raw_best)
             if verbose:
                 print(f"Resumed deterministically from '{resume_from}' (starting at epoch {start_epoch})")
 
@@ -242,7 +251,6 @@ class BaseTrainer:
             print(self.cfg.format_summary(resolved_device=str(self.device)))
 
         inferred_sample = sample_input
-        best_metric: float | None = None
         epochs_no_improve = 0
         history: list[dict[str, float]] = []
 
@@ -250,7 +258,12 @@ class BaseTrainer:
         monitor_mode = self.cfg.training.monitor_mode
         patience = self.cfg.training.patience
 
-        with RunTracker(experiment=self.cfg.experiment.name, root_dir=experiments_dir) as run:
+        with RunTracker(
+            experiment=self.cfg.experiment.name,
+            run_name=resumed_run_name,
+            root_dir=experiments_dir,
+            resume=bool(resumed_run_name),
+        ) as run:
             self.run = run
             run.log_params(self.cfg.to_dict())
 
@@ -305,18 +318,9 @@ class BaseTrainer:
                     metrics_str = " | ".join(f"{k}: {v:.4f}" for k, v in epoch_metrics.items())
                     print(f"Epoch {epoch}/{total_epochs} | {metrics_str}")
 
-                # 5. Checkpoint bundle (crash-consistent + RNG)
-                self._save_bundle_safe(
-                    output_path=ckpt_dir / "model_checkpoint.bundle",
-                    sample_input=inferred_sample,
-                    epoch=epoch,
-                    step=self.global_step,
-                    metrics=epoch_metrics,
-                    include_train_state=True,
-                )
-
-                # 6. Best model & EarlyStopping check
+                # 5. Best model & EarlyStopping check
                 target_key = monitor_key if monitor_key in epoch_metrics else "train_loss"
+                early_stop = False
                 if target_key in epoch_metrics:
                     current_val = epoch_metrics[target_key]
                     is_better = (
@@ -338,12 +342,31 @@ class BaseTrainer:
                     else:
                         epochs_no_improve += 1
                         if patience is not None and epochs_no_improve >= patience:
-                            if verbose:
-                                print(
-                                    f"EarlyStopping triggered at epoch {epoch} "
-                                    f"(no improvement in '{target_key}' for {patience} epochs)."
-                                )
-                            break
+                            early_stop = True
+
+                # 6. Checkpoint bundle (crash-consistent + RNG + resume metadata)
+                ckpt_config = self.cfg.to_dict()
+                ckpt_config["_mangosta_resume"] = {
+                    "run_name": run.run_name,
+                    "best_metric": best_metric,
+                }
+                self._save_bundle_safe(
+                    output_path=ckpt_dir / "model_checkpoint.bundle",
+                    sample_input=inferred_sample,
+                    epoch=epoch,
+                    step=self.global_step,
+                    metrics=epoch_metrics,
+                    include_train_state=True,
+                    config_override=ckpt_config,
+                )
+
+                if early_stop:
+                    if verbose:
+                        print(
+                            f"EarlyStopping triggered at epoch {epoch} "
+                            f"(no improvement in '{target_key}' for {patience} epochs)."
+                        )
+                    break
 
             # 7. Final production bundle (lightweight, zero optimizer)
             final_path = self._save_bundle_safe(
@@ -393,6 +416,7 @@ class BaseTrainer:
         step: int,
         metrics: dict[str, float],
         include_train_state: bool,
+        config_override: dict[str, Any] | None = None,
     ) -> Path:
         """Save bundle aligned with model family/version/init_args and CPU-safe schema."""
         was_training = self.model.training
@@ -413,11 +437,31 @@ class BaseTrainer:
                 epoch=epoch,
                 step=step,
                 metrics=metrics,
-                config=self.cfg.to_dict(),
+                config=config_override if config_override is not None else self.cfg.to_dict(),
             )
         finally:
             self.model.to(orig_device)
             self.model.train(was_training)
+
+    @staticmethod
+    def _read_resume_metadata(bundle_path: str | Path) -> dict[str, Any]:
+        """Read `_mangosta_resume` metadata from `config.yaml` inside a `.bundle`."""
+        import zipfile
+
+        import yaml
+
+        try:
+            with zipfile.ZipFile(bundle_path, "r") as zf:
+                if "config.yaml" not in zf.namelist():
+                    return {}
+                raw_cfg = yaml.safe_load(zf.read("config.yaml").decode("utf-8"))
+                if isinstance(raw_cfg, dict):
+                    meta = raw_cfg.get("_mangosta_resume")
+                    if isinstance(meta, dict):
+                        return meta
+        except Exception:
+            pass
+        return {}
 
     @staticmethod
     def _safe_cpu_sample(sample: Any) -> Any:
