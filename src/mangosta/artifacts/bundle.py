@@ -66,7 +66,10 @@ def _restore_rng_states(rng_states: dict[str, Any]) -> None:
 
     if HAS_TORCH and torch is not None:
         if "torch_cpu" in rng_states and rng_states["torch_cpu"] is not None:
-            torch.set_rng_state(rng_states["torch_cpu"])
+            cpu_state = rng_states["torch_cpu"]
+            if isinstance(cpu_state, torch.Tensor):
+                cpu_state = cpu_state.cpu().to(torch.uint8)
+            torch.set_rng_state(cpu_state)
 
         if (
             "torch_cuda" in rng_states
@@ -74,7 +77,11 @@ def _restore_rng_states(rng_states: dict[str, Any]) -> None:
             and torch.cuda.is_available()
         ):
             try:
-                torch.cuda.set_rng_state_all(rng_states["torch_cuda"])
+                cuda_states = [
+                    s.cpu().to(torch.uint8) if isinstance(s, torch.Tensor) else s
+                    for s in rng_states["torch_cuda"]
+                ]
+                torch.cuda.set_rng_state_all(cuda_states)
             except Exception:
                 pass
 
